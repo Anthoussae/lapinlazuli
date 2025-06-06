@@ -19,6 +19,7 @@ const TRIGGER_EVENTS = Object.freeze({
   POTION_PICKUP: "POTION_PICKUP",
   DRINK_POTION: "DRINK_POTION",
   ASSIGN_SHOP_PRICES: "ASSIGN_SHOP_PRICES",
+  REST: "REST",
 });
 const PATHS = Object.freeze({
   EASY_FIGHT: "easy fight",
@@ -29,10 +30,11 @@ const PATHS = Object.freeze({
   RELIC_OFFERING: "relicOffering",
   GEM_OFFERING: "gemOffering",
   CARD_OFFERING: "cardOffering",
-  FORGE: "forge",
+  ENCHANT: "ENCHANT",
   POTION_OFFERING: "potionOffering",
   HOARD: "hoard",
   PURGE: "purge",
+  TRANSMUTE: "transmute",
 });
 const SCREENS = Object.freeze({
   MAIN: "main view",
@@ -60,14 +62,16 @@ const PHASES = Object.freeze({
   POTION_OFFERING: "potion offering",
   COMBAT_END: "combat end",
   SOCKET_GEM: "socket gem",
-  UPGRADE_CARD: "upgrade card",
   SHOP: "shop",
   PATH_SELECTION: "path selection",
   REST: "rest",
-  FORGE: "forge",
+  ENCHANT: "ENCHANT",
+  TRANSMUTE: "transmute",
   COMBAT: "combat",
   DEATH: "death",
   VICTORY: "victory",
+  PURGE: "purge",
+  HOARD: "hoard",
 });
 const ACTIONS = Object.freeze({
   NEW_GAME: "NEW_GAME",
@@ -91,10 +95,20 @@ const ACTIONS = Object.freeze({
   APPLY_CARD_MOD: "APPLY_CARD_MOD",
   SCREEN_CHANGE: "SCREEN_CHANGE",
   POPULATE_SHOPFRONT: "POPULATE_SHOPFRONT",
+  INCREASE_BASE_BUNNIES: "INCREASE_BASE_BUNNIES",
+  GAIN_GOLD: "GAIN_GOLD",
+  PRACTICE_WANDWORK: "PRACTICE_WANDWORK",
+  LOOT_HOARD: "LOOT_HOARD",
+  REST: "REST",
 });
 const CARD_TYPES = Object.freeze({
   INSTANT: "instant", // resolves immediately when played, does not go to the spellbook.
   SPELL: "spell", // goes to the spellbook when played, resolves when the spellbook is cast.
+});
+const REST_OPTIONS = Object.freeze({
+  HEAL: "heal",
+  PRACTICE: "practice",
+  ENCHANT: "enchant",
 });
 //#endregion enums
 //#region data maps
@@ -104,21 +118,24 @@ const difficultyModifiersMap = Object.freeze({
     goldModifier: 20,
     basicCardCountModifier: 5,
     luckModifier: 2,
-    shopPriceMultiplier: 0.8, // 20% cheaper shop prices
+    shopPriceMultiplierModifier: -0.2, // 20% cheaper shop prices
+    restHealthRestoreModifier: 30, // heal 30 health when resting
   },
   [DIFFICULTIES.MEDIUM]: {
     maxHealthModifier: 75,
     goldModifier: 10,
     basicCardCountModifier: 8,
     luckModifier: 1,
-    shopPriceMultiplier: 1, // normal shop prices
+    shopPriceMultiplierModifier: 0, // normal shop prices
+    restHealthRestoreModifier: 25, // heal 20 health when resting
   },
   [DIFFICULTIES.HARD]: {
     maxHealthModifier: 50,
     goldModifier: 0,
     basicCardCountModifier: 11,
     luckModifier: 0,
-    shopPriceMultiplier: 1.2, // 20% more expensive shop prices
+    shopPriceMultiplierModifier: 0.2, // 20% more expensive shop prices
+    restHealthRestoreModifier: 20, // heal 20 health when resting
   },
 });
 const pathMap = Object.freeze({
@@ -133,12 +150,12 @@ const pathMap = Object.freeze({
     leadsTo: PHASES.COMBAT,
   },
   [PATHS.HARD_FIGHT]: {
-    rarity: RARITIES.UNCOMMON,
+    rarity: RARITIES.COMMON,
     isFight: true,
     leadsTo: PHASES.COMBAT,
   },
   [PATHS.REST]: { rarity: RARITIES.RARE, leadsTo: PHASES.REST },
-  [PATHS.SHOP]: { rarity: RARITIES.COMMON, leadsTo: PHASES.SHOP },
+  [PATHS.SHOP]: { rarity: RARITIES.RARE, leadsTo: PHASES.SHOP },
   [PATHS.RELIC_OFFERING]: {
     rarity: RARITIES.MYTHIC,
     leadsTo: PHASES.RELIC_OFFERING,
@@ -148,16 +165,17 @@ const pathMap = Object.freeze({
     rarity: RARITIES.UNCOMMON,
     leadsTo: PHASES.CARD_OFFERING,
   },
-  [PATHS.FORGE]: { rarity: RARITIES.RARE, leadsTo: PHASES.FORGE },
+  [PATHS.ENCHANT]: { rarity: RARITIES.RARE, leadsTo: PHASES.ENCHANT },
   [PATHS.POTION_OFFERING]: {
-    rarity: RARITIES.UNCOMMON,
+    rarity: RARITIES.RARE,
     leadsTo: PHASES.POTION_OFFERING,
   },
   [PATHS.HOARD]: {
     rarity: RARITIES.MYTHIC,
-    leadsTo: PHASES.MYTHIC_RELIC_OFFERING,
+    leadsTo: PHASES.HOARD,
   },
   [PATHS.PURGE]: { rarity: RARITIES.RARE, leadsTo: PHASES.PURGE },
+  [PATHS.TRANSMUTE]: { rarity: RARITIES.RARE, leadsTo: PHASES.TRANSMUTE },
 });
 
 //#endregion data maps
@@ -178,7 +196,7 @@ const cardList = [
     bunnyMult: 2,
   },
   {
-    name: "Gold Conjuration",
+    name: "Fairy Gold",
     cardType: CARD_TYPES.SPELL,
     rarity: RARITIES.BASIC_MONO,
     cost: 1,
@@ -240,6 +258,7 @@ const cardList = [
     cost: 0,
     inkAdd: 3,
     healthCost: 3,
+    exile: true, // Exile this card after use
   },
   {
     name: "Weasel's Bargain",
@@ -319,6 +338,15 @@ const relicList = [
     triggers: {
       [TRIGGER_EVENTS.RELIC_PICKUP]: {
         bonusPages: 1,
+      },
+    },
+  },
+  {
+    name: "Magic Wand",
+    rarity: RARITIES.COMMON,
+    triggers: {
+      [TRIGGER_EVENTS.RELIC_PICKUP]: {
+        bonusBaseBunnies: 1,
       },
     },
   },
@@ -430,28 +458,54 @@ const relicList = [
       },
     },
   },
+  {
+    name: "Sleeping Bag",
+    rarity: RARITIES.COMMON,
+    triggers: {
+      [TRIGGER_EVENTS.REST]: {
+        healPlayer: 20, // heal 20 health when resting
+      },
+    },
+  },
+  {
+    name: "Toothfairy's Charm",
+    rarity: RARITIES.COMMON,
+    triggers: {
+      [TRIGGER_EVENTS.REST]: {
+        goldAdd: 10, // gain 10 gold when resting
+      },
+    },
+  },
+  {
+    name: "Planetarium Mobile",
+    rarity: RARITIES.UNCOMMON,
+    triggers: {
+      [TRIGGER_EVENTS.REST]: {
+        permanentlyUpgradeRandomCardsInDeck: 1, // upgrade a random card in the deck when resting
+      },
+    },
+  },
 ];
-
 const potionList = [
   {
     name: "Lesser Healing Potion",
     rarity: RARITIES.COMMON,
-    healthRestore: 20,
+    healthRestore: 10,
   },
   {
     name: "Healing Potion",
     rarity: RARITIES.UNCOMMON,
-    healthRestore: 40,
+    healthRestore: 15,
   },
   {
     name: "Greater Healing Potion",
     rarity: RARITIES.RARE,
-    healthRestore: 60,
+    healthRestore: 20,
   },
   {
     name: "Elixir of Life",
     rarity: RARITIES.MYTHIC,
-    healthRestore: 100,
+    healthRestore: 50,
   },
 ];
 const enemyList = [
@@ -493,21 +547,7 @@ function screenChange(state, targetScreen) {
   };
 }
 function assignShopPrices(state) {
-  const difficulty = state.campaign.difficulty || DIFFICULTIES.MEDIUM;
-  const difficultyMultiplier =
-    difficultyModifiersMap[difficulty]?.shopPriceMultiplier || 1;
-
-  // Check if any relics apply modifiers
-  let relicMultiplier = 1;
-  state.campaign.relicBelt.forEach((relic) => {
-    const trigger = relic.triggers?.[TRIGGER_EVENTS.ASSIGN_SHOP_PRICES];
-    if (trigger?.shopPriceMultiplier) {
-      relicMultiplier *= trigger.shopPriceMultiplier;
-    }
-  });
-
-  // Final global price multiplier
-  const finalMultiplier = difficultyMultiplier * relicMultiplier;
+  const globalMultiplier = state.shopPriceMultiplier || 1;
 
   const basePrices = {
     card: 10,
@@ -535,40 +575,17 @@ function assignShopPrices(state) {
     const rarityMultiplier = rarityMultipliers[rarity] || 1;
 
     const cost = Math.round(
-      (basePrice + upgradeCost) * rarityMultiplier * finalMultiplier
+      (basePrice + upgradeCost) * rarityMultiplier * globalMultiplier
     );
 
     return {
       ...entry,
-      cost,
+      item: {
+        ...item,
+        cost,
+      },
     };
   });
-
-  // const updatedShopfront = state.offerings.shopfront.map((entry) => {
-  //   const { type, item } = entry;
-
-  //   const basePrice = basePrices[type] || 0;
-  //   const upgrades = item.upgrades || 0;
-  //   const upgradeCost = ["card", "potion"].includes(type) ? upgrades * 5 : 0;
-
-  //   const rarity = item.rarity?.toLowerCase?.() || "common";
-  //   const rarityMultiplier = rarityMultipliers[rarity] || 1;
-
-  //   const cost = Math.round(
-  //     (basePrice + upgradeCost) * rarityMultiplier * finalMultiplier
-  //   );
-
-  //   console.log(
-  //     `[PRICE DEBUG] ${type.toUpperCase()} - Name: ${
-  //       item.name
-  //     }, Rarity: ${rarity}, Upgrades: ${upgrades}, Base: ${basePrice}, UpgradeCost: ${upgradeCost}, RarityMult: ${rarityMultiplier}, FinalMult: ${finalMultiplier}, FinalCost: ${cost}`
-  //   );
-
-  //   return {
-  //     ...entry,
-  //     cost,
-  //   };
-  // });
 
   return {
     ...state,
@@ -640,10 +657,16 @@ function applyDifficultyModifiers(state) {
 
   const newCampaign = {
     ...state.campaign,
-    gold: state.campaign.gold + modifiers.goldModifier,
+    gold: state.gold + modifiers.goldModifier,
     basicCardCount:
       state.campaign.basicCardCount + modifiers.basicCardCountModifier,
-    luck: (state.campaign.luck || 0) + (modifiers.luckModifier || 0),
+    luck: (state.luck || 0) + (modifiers.luckModifier || 0),
+    shopPriceMultiplier:
+      (state.shopPriceMultiplier || 1) +
+      (modifiers.shopPriceMultiplierModifier || 0),
+    restHealthRestore:
+      (state.restHealthRestore || 0) +
+      (modifiers.restHealthRestoreModifier || 0),
   };
 
   return {
@@ -724,14 +747,9 @@ function pickPath(state, index) {
     return state;
   }
 
-  const newCampaign = {
-    ...state.campaign,
-    level: state.campaign.level + 1,
-  };
-
   return handlePhaseTransitions({
     ...state,
-    campaign: newCampaign,
+    level: (state.level ?? 0) + 1,
     currentPhase: pathData.leadsTo,
     log: [`Chose path: ${pathKey}`, ...state.log],
     offerings: {
@@ -844,7 +862,7 @@ function populateGemOfferings(state) {
   };
 }
 function populatePathOfferings(state) {
-  const luck = state.campaign.luck || 0;
+  const luck = state.luck || 0;
 
   // Step 1: Pick the fight path
   const fightWeights = {
@@ -1279,7 +1297,15 @@ function openModScreen(state, mod, originPhase = null) {
     log: [`Opened mod screen (${keys[0]}).`, ...state.log],
   };
 }
+function increaseBaseBunnies(state, amount) {
+  const newAmount = Math.max(0, (state.baseBunnies || 0) + amount);
 
+  return {
+    ...state,
+    baseBunnies: newAmount,
+    log: [`Base bunnies increased by ${amount}.`, ...state.log],
+  };
+}
 function applyModToCard(state, card) {
   const mod = state.modData?.mod;
   const origin = state.modData?.origin;
@@ -1436,6 +1462,84 @@ function populateShopfront(state) {
     ],
   };
 }
+function gainGold(state, amount) {
+  const newGold = (state.gold || 0) + amount;
+
+  return {
+    ...state,
+    gold: newGold,
+    log: [`Gained ${amount} gold.`, ...state.log],
+  };
+}
+function practiceWandwork(state) {
+  // Step 1: Increase base bunnies by 1
+  let newState = increaseBaseBunnies(state, 1);
+
+  // Step 2: Advance to path selection
+  newState = advancePhaseTo(newState, PHASES.PATH_SELECTION);
+
+  // Step 3: Handle the transition (populate offerings)
+  newState = handlePhaseTransitions(newState);
+
+  return newState;
+}
+function lootHoard(state) {
+  const baseGold = 10;
+  const levelBonus = state.level || 0;
+  const enemiesDefeated = state.defeatedEnemies?.length || 0;
+  const luck = state.luck || 0;
+
+  const enemyBonus = enemiesDefeated * 5;
+  const luckBonus = luck * 2;
+
+  const totalGold = baseGold + levelBonus + enemyBonus + luckBonus;
+
+  // Step 1: Gain gold
+  let newState = gainGold(state, totalGold);
+
+  // Step 2: Track hoards looted
+  const hoardsLooted = (newState.hoardsLooted || 0) + 1;
+  newState = {
+    ...newState,
+    hoardsLooted,
+    log: [`Looted a hoard! (${totalGold}g)`, ...newState.log],
+  };
+
+  // Step 3: Advance phase
+  newState = advancePhaseTo(newState, PHASES.PATH_SELECTION);
+  newState = handlePhaseTransitions(newState);
+
+  return newState;
+}
+
+function rest(state) {
+  const amountToHeal = state.restHealthRestore || 0;
+  const currentHealth = state.health || 0;
+
+  // Step 1: Heal the player
+  let newState = heal(state, amountToHeal);
+  const healedAmount = newState.health - currentHealth;
+
+  // Step 2: Check relic triggers for REST
+  newState = checkRelicTriggers(newState, TRIGGER_EVENTS.REST);
+
+  // Step 3: Add one summary log line
+  newState = {
+    ...newState,
+    log: [
+      `Rested at the fire and recovered ${healedAmount} HP.`,
+      ...newState.log.filter((msg) => !msg.startsWith("Healed")),
+    ],
+  };
+
+  // Step 4: Advance phase
+  newState = advancePhaseTo(newState, PHASES.PATH_SELECTION);
+
+  // ✅ Step 5: Populate offerings for the new phase
+  newState = handlePhaseTransitions(newState);
+
+  return newState;
+}
 
 //#endregion
 //#region state setup and game initialization
@@ -1446,6 +1550,15 @@ function createInitialState() {
     currentPhase: PHASES.MAIN_MENU,
     maxHealth: 0,
     health: 0,
+    baseBunnies: 0,
+    gold: 0,
+    shopPriceMultiplier: 1,
+    restHealthRestore: 10,
+    hoardsLooted: 0,
+    luck: 0,
+    level: 0,
+    defeatedEnemies: [],
+
     campaign: {
       difficulty: null,
 
@@ -1453,11 +1566,6 @@ function createInitialState() {
       relicBelt: [],
       potionBelt: [],
       trashPile: [],
-      defeatedEnemies: [],
-
-      gold: 100,
-      level: 0,
-      luck: 0,
 
       basicCardCount: 5,
 
@@ -1483,6 +1591,7 @@ function createInitialState() {
       books: 0,
       maxBooks: 0,
       pages: 0,
+      bunnies: 0,
       maxPages: 0,
       handSize: 5,
 
@@ -1497,6 +1606,7 @@ function createInitialState() {
       relics: [],
       paths: [],
       combatRewards: [],
+      restOptions: [],
     },
   };
 }
@@ -1596,7 +1706,7 @@ function createGemInstance(gemName) {
   return { ...found };
 }
 function generateRandomRelic(state, { rarity = null } = {}) {
-  const luck = state.campaign.luck || 0;
+  const luck = state.luck || 0;
   const ownedRelics = new Set([
     ...state.campaign.relicBelt.map((r) => r.name),
     ...state.campaign.trashPile.map((r) => r.name),
@@ -1634,7 +1744,7 @@ function generateRandomCard(
   state,
   { rarity = null, upgrades = undefined, gem = null } = {}
 ) {
-  const luck = state.campaign.luck || 0;
+  const luck = state.luck || 0;
 
   const finalRarity =
     rarity || weightedRandomChoice(getLuckAdjustedRarityWeights(luck));
@@ -1659,7 +1769,7 @@ function generateRandomCard(
   return createCardInstance(undefined, finalRarity, cappedUpgrades, gem);
 }
 function generateRandomPotion(state, { rarity = null, upgrades = null } = {}) {
-  const luck = state.campaign.luck || 0;
+  const luck = state.luck || 0;
   const rarityWeights = getLuckAdjustedRarityWeights(luck);
   const upgradeWeights = {
     0: Math.max(0, 100 - luck),
@@ -1702,7 +1812,7 @@ function generateRandomPotion(state, { rarity = null, upgrades = null } = {}) {
   return createPotionInstance(basePotion.name, upgrades);
 }
 function generateRandomGem(state, { rarity = null } = {}) {
-  const luck = state.campaign.luck || 0;
+  const luck = state.luck || 0;
   const fallbackGem = createGemInstance("Amethyst");
 
   // Choose rarity based on luck if not specified
@@ -1802,7 +1912,7 @@ function upgradePotion(potion, level = 1) {
 
   // === Upgradeable Effects ===
   if ("healthRestore" in upgradedPotion) {
-    upgradedPotion.healthRestore += 5 * level;
+    upgradedPotion.healthRestore += 2 * level;
     upgradable = true;
   }
 
@@ -1857,7 +1967,7 @@ function getLuckAdjustedRarityWeights(luck = 0) {
   };
 }
 function chargeGoldCost(state, cost, context = "purchase") {
-  if (state.campaign.gold < cost) {
+  if (state.gold < cost) {
     console.warn(`Not enough gold for ${context}!`);
     return state; // return unmodified state
   }
@@ -1866,7 +1976,7 @@ function chargeGoldCost(state, cost, context = "purchase") {
     ...state,
     campaign: {
       ...state.campaign,
-      gold: state.campaign.gold - cost,
+      gold: state.gold - cost,
     },
     log: [`Spent ${cost} gold on ${context}.`, ...state.log],
   };
@@ -1928,50 +2038,21 @@ function checkRelicTriggers(state, triggerEvent, context = {}) {
       let newHealth = updatedState.health;
       let newMaxHealth = updatedState.maxHealth;
 
-      if (effect.bonusPages) {
-        campaign.pages += effect.bonusPages;
-      }
-      if (effect.bonusGold) {
-        campaign.gold += effect.bonusGold;
-      }
+      if (effect.bonusPages) campaign.pages += effect.bonusPages;
+      if (effect.bonusInk) campaign.ink += effect.bonusInk;
+      if (effect.bonusBooks) campaign.books += effect.bonusBooks;
       if (effect.bonusHealth) {
         newHealth += effect.bonusHealth;
         newMaxHealth += effect.bonusHealth;
       }
-      if (effect.bonusInk) {
-        campaign.ink += effect.bonusInk;
+      if (effect.bonusGold) {
+        updatedState = gainGold(updatedState, effect.bonusGold);
       }
-      if (effect.bonusBooks) {
-        campaign.books += effect.bonusBooks;
-      }
-
-      // handle ASSIGN_SHOP_PRICES effects
-
-      if (triggerEvent === TRIGGER_EVENTS.ASSIGN_SHOP_PRICES) {
-        if (effect.shopPriceMultiplier) {
-          state = {
-            ...state,
-            offerings: {
-              ...state.offerings,
-              shopfront: state.offerings.shopfront.map((entry) => {
-                const adjustedCost = Math.round(
-                  entry.item.cost * effect.shopPriceMultiplier
-                );
-                return {
-                  ...entry,
-                  item: {
-                    ...entry.item,
-                    cost: adjustedCost,
-                  },
-                };
-              }),
-            },
-            log: [
-              `Applied shop price multiplier (${effect.shopPriceMultiplier})`,
-              ...state.log,
-            ],
-          };
-        }
+      if (effect.bonusBaseBunnies) {
+        updatedState = increaseBaseBunnies(
+          updatedState,
+          effect.bonusBaseBunnies
+        );
       }
 
       updatedState = {
@@ -1985,6 +2066,88 @@ function checkRelicTriggers(state, triggerEvent, context = {}) {
         ],
       };
     }
+
+    // === Handle SHOP PRICE ADJUSTMENT ===
+    if (
+      triggerEvent === TRIGGER_EVENTS.ASSIGN_SHOP_PRICES &&
+      effect.shopPriceMultiplier
+    ) {
+      updatedState = {
+        ...updatedState,
+        offerings: {
+          ...updatedState.offerings,
+          shopfront: updatedState.offerings.shopfront.map((entry) => {
+            const adjustedCost = Math.round(
+              entry.item.cost * effect.shopPriceMultiplier
+            );
+            return {
+              ...entry,
+              item: {
+                ...entry.item,
+                cost: adjustedCost,
+              },
+            };
+          }),
+        },
+        log: [
+          `Applied shop price multiplier (${effect.shopPriceMultiplier})`,
+          ...updatedState.log,
+        ],
+      };
+    }
+
+    // === Handle REST effects ===
+    if (triggerEvent === TRIGGER_EVENTS.REST) {
+      if (effect.healPlayer) {
+        updatedState = heal(updatedState, effect.healPlayer);
+        updatedState = {
+          ...updatedState,
+          log: [
+            `${relic.name} healed you for ${effect.healPlayer} HP while resting.`,
+            ...updatedState.log,
+          ],
+        };
+      }
+
+      if (effect.goldAdd) {
+        updatedState = gainGold(updatedState, effect.goldAdd);
+        updatedState = {
+          ...updatedState,
+          log: [
+            `${relic.name} gave you ${effect.goldAdd} gold while resting.`,
+            ...updatedState.log,
+          ],
+        };
+      }
+
+      if (effect.permanentlyUpgradeRandomCardsInDeck > 0) {
+        const { deck } = updatedState.campaign;
+        const numToUpgrade = Math.min(
+          effect.permanentlyUpgradeRandomCardsInDeck,
+          deck.length
+        );
+
+        const shuffled = [...deck].sort(() => Math.random() - 0.5);
+        const toUpgrade = shuffled.slice(0, numToUpgrade);
+        const upgraded = toUpgrade.map((card) => upgradeCard(card, 1));
+
+        const upgradedDeck = deck.map((card) =>
+          toUpgrade.includes(card) ? upgraded[toUpgrade.indexOf(card)] : card
+        );
+
+        updatedState = {
+          ...updatedState,
+          campaign: {
+            ...updatedState.campaign,
+            deck: upgradedDeck,
+          },
+          log: [
+            `${relic.name} permanently upgraded ${numToUpgrade} card(s) while resting.`,
+            ...updatedState.log,
+          ],
+        };
+      }
+    }
   }
 
   return {
@@ -1992,15 +2155,17 @@ function checkRelicTriggers(state, triggerEvent, context = {}) {
     result,
   };
 }
+
 function heal(state, amount) {
-  const newHealth = Math.min(
-    (state.health || 0) + amount,
-    state.maxHealth || 0
-  );
+  const current = state.health || 0;
+  const max = state.maxHealth || 0;
+  const newHealth = Math.min(current + amount, max);
+  const healedAmount = newHealth - current;
+
   return {
     ...state,
     health: newHealth,
-    log: [`Healed ${amount} HP.`, ...state.log],
+    log: [`Healed ${healedAmount} HP.`, ...state.log],
   };
 }
 function transmuteCard(card) {
@@ -2144,6 +2309,21 @@ function gameReducer(state, action) {
     case ACTIONS.POPULATE_SHOPFRONT:
       return populateShopfront(state);
 
+    case ACTIONS.INCREASE_BASE_BUNNIES:
+      return increaseBaseBunnies(state, action.payload);
+
+    case ACTIONS.GAIN_GOLD:
+      return gainGold(state, action.payload);
+
+    case ACTIONS.PRACTICE_WANDWORK:
+      return practiceWandwork(state);
+
+    case ACTIONS.LOOT_HOARD:
+      return lootHoard(state);
+
+    case ACTIONS.REST:
+      return rest(state);
+
     case ACTIONS.LOG_MESSAGE:
       return {
         ...state,
@@ -2157,7 +2337,6 @@ function gameReducer(state, action) {
 }
 //#endregion
 //#region render function
-// mockup of render function - proper function pending
 function render(state, dispatch) {
   // Get or create output div
   let output = document.getElementById("output");
@@ -2168,19 +2347,43 @@ function render(state, dispatch) {
   }
   output.innerHTML = ""; // Clear previous contents
 
+  // render utility function
+  function renderModPhaseEntry(phase, label, modKey) {
+    if (state.currentPhase === phase && state.currentScreen !== SCREENS.MOD) {
+      const modBtn = document.createElement("button");
+      modBtn.textContent = label;
+      modBtn.style.fontSize = "1.5rem";
+      modBtn.style.padding = "1rem 2rem";
+      modBtn.onclick = () => {
+        modBtn.disabled = true; // prevent double click
+        dispatch({
+          type: ACTIONS.OPEN_MOD_SCREEN,
+          payload: {
+            mod: { [modKey]: true },
+            origin: phase,
+          },
+        });
+      };
+      output.appendChild(modBtn);
+    }
+  }
+
   // === Game Info ===
   const info = document.createElement("div");
   info.innerHTML = `
     <h2>Game Info</h2>
     <p><strong>Current Screen:</strong> ${state.currentScreen}</p>
-    <p><strong>Current Phase:</strong> ${state.currentPhase}</p>
-    <p><strong>Gold:</strong> ${state.campaign.gold}</p>
+    <p><strong>Phase:</strong> ${
+      state.currentPhase
+    } &nbsp;&nbsp; <strong>Level:</strong> ${state.level ?? 0}</p>
+    <p><strong>Gold:</strong> ${state.gold}</p>
     <p><strong>Health:</strong> ${state.health}/${state.maxHealth}</p>
     <p><strong>Deck Size:</strong> ${state.campaign.deck.length}</p>
     <p><strong>Relics:</strong> ${
       state.campaign.relicBelt.map((r) => r.name).join(", ") || "None"
     }</p>
   `;
+
   output.appendChild(info);
 
   // === Log ===
@@ -2333,7 +2536,6 @@ function render(state, dispatch) {
     output.appendChild(gemSection);
   }
   // === Shopfront Display ===
-  console.log("🔍 Rendering shopfront:", state.offerings.shopfront);
 
   if (
     state.currentPhase === PHASES.SHOP &&
@@ -2350,8 +2552,8 @@ function render(state, dispatch) {
       const li = document.createElement("li");
 
       const btn = document.createElement("button");
-      const cost = entry.cost ?? 0;
-      const playerGold = state.campaign.gold ?? 0;
+      const cost = entry.item?.cost ?? 0;
+      const playerGold = state.gold ?? 0;
       const disabled = cost > playerGold;
 
       btn.textContent = `${entry.type.toUpperCase()}: ${
@@ -2434,6 +2636,45 @@ function render(state, dispatch) {
     output.appendChild(modSection);
   }
 
+  // ======= render purge, transmute, and enchant phases (AKA mod phases) ======
+
+  renderModPhaseEntry(PHASES.PURGE, "Lethian Font", "purge");
+  renderModPhaseEntry(PHASES.TRANSMUTE, "Metamorphosis", "transmute");
+  renderModPhaseEntry(PHASES.ENCHANT, "Enchanted Dolmen", "upgrade");
+
+  // ====== render hoard phase= ======
+  if (state.currentPhase === PHASES.HOARD) {
+    const btn = document.createElement("button");
+    btn.textContent = "Loot Hoard";
+    btn.style.fontSize = "1.5rem";
+    btn.style.padding = "1rem 2rem";
+    btn.onclick = () => {
+      // Placeholder until lootHoard is implemented
+      dispatch({ type: "LOOT_HOARD" }); // or just console.log("Loot Hoard")
+    };
+    output.appendChild(btn);
+  }
+  // ====== rest phase rendering ======
+  if (state.currentPhase === PHASES.REST) {
+    const restBtn = document.createElement("button");
+    restBtn.textContent = "Fireside Rest";
+    restBtn.style.fontSize = "1.5rem";
+    restBtn.style.padding = "1rem 2rem";
+    restBtn.onclick = () => {
+      dispatch({ type: "REST" }); // Placeholder
+    };
+
+    const practiceBtn = document.createElement("button");
+    practiceBtn.textContent = "Practice Wandwork";
+    practiceBtn.style.fontSize = "1.5rem";
+    practiceBtn.style.padding = "1rem 2rem";
+    practiceBtn.onclick = () => {
+      dispatch({ type: "PRACTICE_WANDWORK" }); // Placeholder
+    };
+
+    output.appendChild(restBtn);
+    output.appendChild(practiceBtn);
+  }
   // === Deck Inspect / Return Button ===
   //deck inspect button
   if (
@@ -2495,26 +2736,8 @@ window.onload = () => {
   createGameApp(createInitialState(), gameReducer, render);
 };
 
+//#region WIP
 // //------------------------------------------------WIP functions------------------------------------------------
-
-// //@@@@@@@@@@@@ rest functions @@@@@@@@@@@@
-// function beginRest(state) {
-//   // heals the player the appropriate amount based on the player's max health.
-//   //checks rest triggers.
-//   //displays the rest phase
-// }
-
-// function checkRestTriggers(state) {
-//   // Checks if the rest has any triggers that need to be applied
-// }
-
-// function endRest(state) {
-//   //closes the rest phase and advances the game state to the next phase.
-// }
-
-// function randomlyUpgradeCards(state, numberOfUpgrades) {
-//   // randomly upgrades a number of cards in the player's deck based on the number of upgrades.
-// }
 
 // //@@@@@@@@@@@@ combat functions @@@@@@@@@@@@
 
@@ -2654,5 +2877,3 @@ window.onload = () => {
 // function victory(state) {
 //   // Handles the victory phase, such as displaying a victory screen, allowing the player to continue to the next phase or return to the main menu.
 // }
-
-// // Render function - placeholder for UI rendering logic

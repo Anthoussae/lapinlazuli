@@ -157,7 +157,8 @@ var TRIGGER_EVENTS = Object.freeze({
   RELIC_PICKUP: "RELIC_PICKUP",
   POTION_PICKUP: "POTION_PICKUP",
   DRINK_POTION: "DRINK_POTION",
-  ASSIGN_SHOP_PRICES: "ASSIGN_SHOP_PRICES"
+  ASSIGN_SHOP_PRICES: "ASSIGN_SHOP_PRICES",
+  REST: "REST"
 });
 var PATHS = Object.freeze({
   EASY_FIGHT: "easy fight",
@@ -168,10 +169,11 @@ var PATHS = Object.freeze({
   RELIC_OFFERING: "relicOffering",
   GEM_OFFERING: "gemOffering",
   CARD_OFFERING: "cardOffering",
-  FORGE: "forge",
+  ENCHANT: "ENCHANT",
   POTION_OFFERING: "potionOffering",
   HOARD: "hoard",
-  PURGE: "purge"
+  PURGE: "purge",
+  TRANSMUTE: "transmute"
 });
 var SCREENS = Object.freeze({
   MAIN: "main view",
@@ -205,14 +207,16 @@ var PHASES = Object.freeze({
   POTION_OFFERING: "potion offering",
   COMBAT_END: "combat end",
   SOCKET_GEM: "socket gem",
-  UPGRADE_CARD: "upgrade card",
   SHOP: "shop",
   PATH_SELECTION: "path selection",
   REST: "rest",
-  FORGE: "forge",
+  ENCHANT: "ENCHANT",
+  TRANSMUTE: "transmute",
   COMBAT: "combat",
   DEATH: "death",
-  VICTORY: "victory"
+  VICTORY: "victory",
+  PURGE: "purge",
+  HOARD: "hoard"
 });
 var ACTIONS = Object.freeze({
   NEW_GAME: "NEW_GAME",
@@ -235,12 +239,22 @@ var ACTIONS = Object.freeze({
   OPEN_MOD_SCREEN: "OPEN_MOD_SCREEN",
   APPLY_CARD_MOD: "APPLY_CARD_MOD",
   SCREEN_CHANGE: "SCREEN_CHANGE",
-  POPULATE_SHOPFRONT: "POPULATE_SHOPFRONT"
+  POPULATE_SHOPFRONT: "POPULATE_SHOPFRONT",
+  INCREASE_BASE_BUNNIES: "INCREASE_BASE_BUNNIES",
+  GAIN_GOLD: "GAIN_GOLD",
+  PRACTICE_WANDWORK: "PRACTICE_WANDWORK",
+  LOOT_HOARD: "LOOT_HOARD",
+  REST: "REST"
 });
 var CARD_TYPES = Object.freeze({
   INSTANT: "instant",
   // resolves immediately when played, does not go to the spellbook.
   SPELL: "spell" // goes to the spellbook when played, resolves when the spellbook is cast.
+});
+var REST_OPTIONS = Object.freeze({
+  HEAL: "heal",
+  PRACTICE: "practice",
+  ENCHANT: "enchant"
 });
 //#endregion enums
 //#region data maps
@@ -249,19 +263,25 @@ var difficultyModifiersMap = Object.freeze(_defineProperty(_defineProperty(_defi
   goldModifier: 20,
   basicCardCountModifier: 5,
   luckModifier: 2,
-  shopPriceMultiplier: 0.8 // 20% cheaper shop prices
+  shopPriceMultiplierModifier: -0.2,
+  // 20% cheaper shop prices
+  restHealthRestoreModifier: 30 // heal 30 health when resting
 }), DIFFICULTIES.MEDIUM, {
   maxHealthModifier: 75,
   goldModifier: 10,
   basicCardCountModifier: 8,
   luckModifier: 1,
-  shopPriceMultiplier: 1 // normal shop prices
+  shopPriceMultiplierModifier: 0,
+  // normal shop prices
+  restHealthRestoreModifier: 25 // heal 20 health when resting
 }), DIFFICULTIES.HARD, {
   maxHealthModifier: 50,
   goldModifier: 0,
   basicCardCountModifier: 11,
   luckModifier: 0,
-  shopPriceMultiplier: 1.2 // 20% more expensive shop prices
+  shopPriceMultiplierModifier: 0.2,
+  // 20% more expensive shop prices
+  restHealthRestoreModifier: 20 // heal 20 health when resting
 }));
 var pathMap = Object.freeze((_Object$freeze2 = {}, _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_Object$freeze2, PATHS.EASY_FIGHT, {
   rarity: RARITIES.COMMON,
@@ -272,14 +292,14 @@ var pathMap = Object.freeze((_Object$freeze2 = {}, _defineProperty(_defineProper
   isFight: true,
   leadsTo: PHASES.COMBAT
 }), PATHS.HARD_FIGHT, {
-  rarity: RARITIES.UNCOMMON,
+  rarity: RARITIES.COMMON,
   isFight: true,
   leadsTo: PHASES.COMBAT
 }), PATHS.REST, {
   rarity: RARITIES.RARE,
   leadsTo: PHASES.REST
 }), PATHS.SHOP, {
-  rarity: RARITIES.COMMON,
+  rarity: RARITIES.RARE,
   leadsTo: PHASES.SHOP
 }), PATHS.RELIC_OFFERING, {
   rarity: RARITIES.MYTHIC,
@@ -290,18 +310,21 @@ var pathMap = Object.freeze((_Object$freeze2 = {}, _defineProperty(_defineProper
 }), PATHS.CARD_OFFERING, {
   rarity: RARITIES.UNCOMMON,
   leadsTo: PHASES.CARD_OFFERING
-}), PATHS.FORGE, {
+}), PATHS.ENCHANT, {
   rarity: RARITIES.RARE,
-  leadsTo: PHASES.FORGE
+  leadsTo: PHASES.ENCHANT
 }), PATHS.POTION_OFFERING, {
-  rarity: RARITIES.UNCOMMON,
+  rarity: RARITIES.RARE,
   leadsTo: PHASES.POTION_OFFERING
-}), _defineProperty(_defineProperty(_Object$freeze2, PATHS.HOARD, {
+}), _defineProperty(_defineProperty(_defineProperty(_Object$freeze2, PATHS.HOARD, {
   rarity: RARITIES.MYTHIC,
-  leadsTo: PHASES.MYTHIC_RELIC_OFFERING
+  leadsTo: PHASES.HOARD
 }), PATHS.PURGE, {
   rarity: RARITIES.RARE,
   leadsTo: PHASES.PURGE
+}), PATHS.TRANSMUTE, {
+  rarity: RARITIES.RARE,
+  leadsTo: PHASES.TRANSMUTE
 })));
 
 //#endregion data maps
@@ -319,7 +342,7 @@ var cardList = [{
   cost: 2,
   bunnyMult: 2
 }, {
-  name: "Gold Conjuration",
+  name: "Fairy Gold",
   cardType: CARD_TYPES.SPELL,
   rarity: RARITIES.BASIC_MONO,
   cost: 1,
@@ -372,7 +395,8 @@ var cardList = [{
   rarity: RARITIES.MYTHIC,
   cost: 0,
   inkAdd: 3,
-  healthCost: 3
+  healthCost: 3,
+  exile: true // Exile this card after use
 }, {
   name: "Weasel's Bargain",
   cardType: CARD_TYPES.SPELL,
@@ -437,6 +461,12 @@ var relicList = [{
   rarity: RARITIES.COMMON,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
     bonusPages: 1
+  })
+}, {
+  name: "Magic Wand",
+  rarity: RARITIES.COMMON,
+  triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
+    bonusBaseBunnies: 1
   })
 }, {
   name: "Magic Egg",
@@ -513,23 +543,41 @@ var relicList = [{
   triggers: _defineProperty({}, TRIGGER_EVENTS.ASSIGN_SHOP_PRICES, {
     shopPriceMultiplier: 0.8 // 20% cheaper shop prices
   })
+}, {
+  name: "Sleeping Bag",
+  rarity: RARITIES.COMMON,
+  triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
+    healPlayer: 20 // heal 20 health when resting
+  })
+}, {
+  name: "Toothfairy's Charm",
+  rarity: RARITIES.COMMON,
+  triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
+    goldAdd: 10 // gain 10 gold when resting
+  })
+}, {
+  name: "Planetarium Mobile",
+  rarity: RARITIES.UNCOMMON,
+  triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
+    permanentlyUpgradeRandomCardsInDeck: 1 // upgrade a random card in the deck when resting
+  })
 }];
 var potionList = [{
   name: "Lesser Healing Potion",
   rarity: RARITIES.COMMON,
-  healthRestore: 20
+  healthRestore: 10
 }, {
   name: "Healing Potion",
   rarity: RARITIES.UNCOMMON,
-  healthRestore: 40
+  healthRestore: 15
 }, {
   name: "Greater Healing Potion",
   rarity: RARITIES.RARE,
-  healthRestore: 60
+  healthRestore: 20
 }, {
   name: "Elixir of Life",
   rarity: RARITIES.MYTHIC,
-  healthRestore: 100
+  healthRestore: 50
 }];
 var enemyList = [{
   name: "Lettuce Goblin",
@@ -576,22 +624,7 @@ function screenChange(state, targetScreen) {
   });
 }
 function assignShopPrices(state) {
-  var _difficultyModifiersM;
-  var difficulty = state.campaign.difficulty || DIFFICULTIES.MEDIUM;
-  var difficultyMultiplier = ((_difficultyModifiersM = difficultyModifiersMap[difficulty]) === null || _difficultyModifiersM === void 0 ? void 0 : _difficultyModifiersM.shopPriceMultiplier) || 1;
-
-  // Check if any relics apply modifiers
-  var relicMultiplier = 1;
-  state.campaign.relicBelt.forEach(function (relic) {
-    var _relic$triggers;
-    var trigger = (_relic$triggers = relic.triggers) === null || _relic$triggers === void 0 ? void 0 : _relic$triggers[TRIGGER_EVENTS.ASSIGN_SHOP_PRICES];
-    if (trigger !== null && trigger !== void 0 && trigger.shopPriceMultiplier) {
-      relicMultiplier *= trigger.shopPriceMultiplier;
-    }
-  });
-
-  // Final global price multiplier
-  var finalMultiplier = difficultyMultiplier * relicMultiplier;
+  var globalMultiplier = state.shopPriceMultiplier || 1;
   var basePrices = {
     card: 10,
     potion: 20,
@@ -614,38 +647,13 @@ function assignShopPrices(state) {
     var upgradeCost = ["card", "potion"].includes(type) ? upgrades * 5 : 0;
     var rarity = ((_item$rarity = item.rarity) === null || _item$rarity === void 0 || (_item$rarity$toLowerC = _item$rarity.toLowerCase) === null || _item$rarity$toLowerC === void 0 ? void 0 : _item$rarity$toLowerC.call(_item$rarity)) || "common";
     var rarityMultiplier = rarityMultipliers[rarity] || 1;
-    var cost = Math.round((basePrice + upgradeCost) * rarityMultiplier * finalMultiplier);
+    var cost = Math.round((basePrice + upgradeCost) * rarityMultiplier * globalMultiplier);
     return _objectSpread(_objectSpread({}, entry), {}, {
-      cost: cost
+      item: _objectSpread(_objectSpread({}, item), {}, {
+        cost: cost
+      })
     });
   });
-
-  // const updatedShopfront = state.offerings.shopfront.map((entry) => {
-  //   const { type, item } = entry;
-
-  //   const basePrice = basePrices[type] || 0;
-  //   const upgrades = item.upgrades || 0;
-  //   const upgradeCost = ["card", "potion"].includes(type) ? upgrades * 5 : 0;
-
-  //   const rarity = item.rarity?.toLowerCase?.() || "common";
-  //   const rarityMultiplier = rarityMultipliers[rarity] || 1;
-
-  //   const cost = Math.round(
-  //     (basePrice + upgradeCost) * rarityMultiplier * finalMultiplier
-  //   );
-
-  //   console.log(
-  //     `[PRICE DEBUG] ${type.toUpperCase()} - Name: ${
-  //       item.name
-  //     }, Rarity: ${rarity}, Upgrades: ${upgrades}, Base: ${basePrice}, UpgradeCost: ${upgradeCost}, RarityMult: ${rarityMultiplier}, FinalMult: ${finalMultiplier}, FinalCost: ${cost}`
-  //   );
-
-  //   return {
-  //     ...entry,
-  //     cost,
-  //   };
-  // });
-
   return _objectSpread(_objectSpread({}, state), {}, {
     offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
       shopfront: updatedShopfront
@@ -727,9 +735,11 @@ function applyDifficultyModifiers(state) {
   }
   var modifiers = difficultyModifiersMap[difficulty];
   var newCampaign = _objectSpread(_objectSpread({}, state.campaign), {}, {
-    gold: state.campaign.gold + modifiers.goldModifier,
+    gold: state.gold + modifiers.goldModifier,
     basicCardCount: state.campaign.basicCardCount + modifiers.basicCardCountModifier,
-    luck: (state.campaign.luck || 0) + (modifiers.luckModifier || 0)
+    luck: (state.luck || 0) + (modifiers.luckModifier || 0),
+    shopPriceMultiplier: (state.shopPriceMultiplier || 1) + (modifiers.shopPriceMultiplierModifier || 0),
+    restHealthRestore: (state.restHealthRestore || 0) + (modifiers.restHealthRestoreModifier || 0)
   });
   return _objectSpread(_objectSpread({}, state), {}, {
     maxHealth: state.maxHealth + modifiers.maxHealthModifier,
@@ -780,6 +790,7 @@ function handlePhaseTransitions(state) {
   }
 }
 function pickPath(state, index) {
+  var _state$level;
   var paths = state.offerings.paths;
   if (!paths || index < 0 || index >= paths.length) {
     console.error("Invalid path index:", index);
@@ -792,11 +803,8 @@ function pickPath(state, index) {
     console.error("Path has no destination phase:", pathKey);
     return state;
   }
-  var newCampaign = _objectSpread(_objectSpread({}, state.campaign), {}, {
-    level: state.campaign.level + 1
-  });
   return handlePhaseTransitions(_objectSpread(_objectSpread({}, state), {}, {
-    campaign: newCampaign,
+    level: ((_state$level = state.level) !== null && _state$level !== void 0 ? _state$level : 0) + 1,
     currentPhase: pathData.leadsTo,
     log: ["Chose path: ".concat(pathKey)].concat(_toConsumableArray(state.log)),
     offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
@@ -898,7 +906,7 @@ function populateGemOfferings(state) {
 }
 function populatePathOfferings(state) {
   var _state$campaign$deck;
-  var luck = state.campaign.luck || 0;
+  var luck = state.luck || 0;
 
   // Step 1: Pick the fight path
   var fightWeights = _defineProperty(_defineProperty(_defineProperty({}, PATHS.EASY_FIGHT, 3), PATHS.MEDIUM_FIGHT, 2), PATHS.HARD_FIGHT, 1);
@@ -1260,6 +1268,13 @@ function openModScreen(state, mod) {
     log: ["Opened mod screen (".concat(keys[0], ").")].concat(_toConsumableArray(state.log))
   });
 }
+function increaseBaseBunnies(state, amount) {
+  var newAmount = Math.max(0, (state.baseBunnies || 0) + amount);
+  return _objectSpread(_objectSpread({}, state), {}, {
+    baseBunnies: newAmount,
+    log: ["Base bunnies increased by ".concat(amount, ".")].concat(_toConsumableArray(state.log))
+  });
+}
 function applyModToCard(state, card) {
   var _state$modData, _state$modData2;
   var mod = (_state$modData = state.modData) === null || _state$modData === void 0 ? void 0 : _state$modData.mod;
@@ -1399,6 +1414,74 @@ function populateShopfront(state) {
     log: ["Populated shopfront with ".concat(generatedItems.length, " unique items.")].concat(_toConsumableArray(updatedState.log))
   });
 }
+function gainGold(state, amount) {
+  var newGold = (state.gold || 0) + amount;
+  return _objectSpread(_objectSpread({}, state), {}, {
+    gold: newGold,
+    log: ["Gained ".concat(amount, " gold.")].concat(_toConsumableArray(state.log))
+  });
+}
+function practiceWandwork(state) {
+  // Step 1: Increase base bunnies by 1
+  var newState = increaseBaseBunnies(state, 1);
+
+  // Step 2: Advance to path selection
+  newState = advancePhaseTo(newState, PHASES.PATH_SELECTION);
+
+  // Step 3: Handle the transition (populate offerings)
+  newState = handlePhaseTransitions(newState);
+  return newState;
+}
+function lootHoard(state) {
+  var _state$defeatedEnemie;
+  var baseGold = 10;
+  var levelBonus = state.level || 0;
+  var enemiesDefeated = ((_state$defeatedEnemie = state.defeatedEnemies) === null || _state$defeatedEnemie === void 0 ? void 0 : _state$defeatedEnemie.length) || 0;
+  var luck = state.luck || 0;
+  var enemyBonus = enemiesDefeated * 5;
+  var luckBonus = luck * 2;
+  var totalGold = baseGold + levelBonus + enemyBonus + luckBonus;
+
+  // Step 1: Gain gold
+  var newState = gainGold(state, totalGold);
+
+  // Step 2: Track hoards looted
+  var hoardsLooted = (newState.hoardsLooted || 0) + 1;
+  newState = _objectSpread(_objectSpread({}, newState), {}, {
+    hoardsLooted: hoardsLooted,
+    log: ["Looted a hoard! (".concat(totalGold, "g)")].concat(_toConsumableArray(newState.log))
+  });
+
+  // Step 3: Advance phase
+  newState = advancePhaseTo(newState, PHASES.PATH_SELECTION);
+  newState = handlePhaseTransitions(newState);
+  return newState;
+}
+function rest(state) {
+  var amountToHeal = state.restHealthRestore || 0;
+  var currentHealth = state.health || 0;
+
+  // Step 1: Heal the player
+  var newState = heal(state, amountToHeal);
+  var healedAmount = newState.health - currentHealth;
+
+  // Step 2: Check relic triggers for REST
+  newState = checkRelicTriggers(newState, TRIGGER_EVENTS.REST);
+
+  // Step 3: Add one summary log line
+  newState = _objectSpread(_objectSpread({}, newState), {}, {
+    log: ["Rested at the fire and recovered ".concat(healedAmount, " HP.")].concat(_toConsumableArray(newState.log.filter(function (msg) {
+      return !msg.startsWith("Healed");
+    })))
+  });
+
+  // Step 4: Advance phase
+  newState = advancePhaseTo(newState, PHASES.PATH_SELECTION);
+
+  // ✅ Step 5: Populate offerings for the new phase
+  newState = handlePhaseTransitions(newState);
+  return newState;
+}
 
 //#endregion
 //#region state setup and game initialization
@@ -1409,16 +1492,20 @@ function createInitialState() {
     currentPhase: PHASES.MAIN_MENU,
     maxHealth: 0,
     health: 0,
+    baseBunnies: 0,
+    gold: 0,
+    shopPriceMultiplier: 1,
+    restHealthRestore: 10,
+    hoardsLooted: 0,
+    luck: 0,
+    level: 0,
+    defeatedEnemies: [],
     campaign: {
       difficulty: null,
       deck: [],
       relicBelt: [],
       potionBelt: [],
       trashPile: [],
-      defeatedEnemies: [],
-      gold: 100,
-      level: 0,
-      luck: 0,
       basicCardCount: 5,
       ink: 3,
       books: 1,
@@ -1439,6 +1526,7 @@ function createInitialState() {
       books: 0,
       maxBooks: 0,
       pages: 0,
+      bunnies: 0,
       maxPages: 0,
       handSize: 5,
       enemy: null
@@ -1451,7 +1539,8 @@ function createInitialState() {
       gems: [],
       relics: [],
       paths: [],
-      combatRewards: []
+      combatRewards: [],
+      restOptions: []
     }
   };
 }
@@ -1570,7 +1659,7 @@ function generateRandomRelic(state) {
   var _ref0 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
     _ref0$rarity = _ref0.rarity,
     rarity = _ref0$rarity === void 0 ? null : _ref0$rarity;
-  var luck = state.campaign.luck || 0;
+  var luck = state.luck || 0;
   var ownedRelics = new Set([].concat(_toConsumableArray(state.campaign.relicBelt.map(function (r) {
     return r.name;
   })), _toConsumableArray(state.campaign.trashPile.map(function (r) {
@@ -1601,7 +1690,7 @@ function generateRandomRelic(state) {
   return _objectSpread({}, chosen);
 }
 function generateRandomCard(state) {
-  var _state$defeatedEnemie;
+  var _state$defeatedEnemie2;
   var _ref1 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
     _ref1$rarity = _ref1.rarity,
     rarity = _ref1$rarity === void 0 ? null : _ref1$rarity,
@@ -1609,7 +1698,7 @@ function generateRandomCard(state) {
     upgrades = _ref1$upgrades === void 0 ? undefined : _ref1$upgrades,
     _ref1$gem = _ref1.gem,
     gem = _ref1$gem === void 0 ? null : _ref1$gem;
-  var luck = state.campaign.luck || 0;
+  var luck = state.luck || 0;
   var finalRarity = rarity || weightedRandomChoice(getLuckAdjustedRarityWeights(luck));
   var upgradeWeights = {
     0: Math.max(0, 100 - luck),
@@ -1619,7 +1708,7 @@ function generateRandomCard(state) {
     4: 0 + luck
   };
   var finalUpgrades = upgrades !== undefined ? upgrades : Number(weightedRandomChoice(upgradeWeights));
-  var defeatedCount = ((_state$defeatedEnemie = state.defeatedEnemies) === null || _state$defeatedEnemie === void 0 ? void 0 : _state$defeatedEnemie.length) || 0;
+  var defeatedCount = ((_state$defeatedEnemie2 = state.defeatedEnemies) === null || _state$defeatedEnemie2 === void 0 ? void 0 : _state$defeatedEnemie2.length) || 0;
   var maxUpgrades = Math.min(4, Math.floor(defeatedCount / 3));
   var cappedUpgrades = Math.min(finalUpgrades, maxUpgrades);
   return createCardInstance(undefined, finalRarity, cappedUpgrades, gem);
@@ -1630,7 +1719,7 @@ function generateRandomPotion(state) {
     rarity = _ref10$rarity === void 0 ? null : _ref10$rarity,
     _ref10$upgrades = _ref10.upgrades,
     upgrades = _ref10$upgrades === void 0 ? null : _ref10$upgrades;
-  var luck = state.campaign.luck || 0;
+  var luck = state.luck || 0;
   var rarityWeights = getLuckAdjustedRarityWeights(luck);
   var upgradeWeights = {
     0: Math.max(0, 100 - luck),
@@ -1675,7 +1764,7 @@ function generateRandomGem(state) {
   var _ref11 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
     _ref11$rarity = _ref11.rarity,
     rarity = _ref11$rarity === void 0 ? null : _ref11$rarity;
-  var luck = state.campaign.luck || 0;
+  var luck = state.luck || 0;
   var fallbackGem = createGemInstance("Amethyst");
 
   // Choose rarity based on luck if not specified
@@ -1762,7 +1851,7 @@ function upgradePotion(potion) {
 
   // === Upgradeable Effects ===
   if ("healthRestore" in upgradedPotion) {
-    upgradedPotion.healthRestore += 5 * level;
+    upgradedPotion.healthRestore += 2 * level;
     upgradable = true;
   }
   if (!upgradable) {
@@ -1808,13 +1897,13 @@ function getLuckAdjustedRarityWeights() {
 }
 function chargeGoldCost(state, cost) {
   var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : "purchase";
-  if (state.campaign.gold < cost) {
+  if (state.gold < cost) {
     console.warn("Not enough gold for ".concat(context, "!"));
     return state; // return unmodified state
   }
   return _objectSpread(_objectSpread({}, state), {}, {
     campaign: _objectSpread(_objectSpread({}, state.campaign), {}, {
-      gold: state.campaign.gold - cost
+      gold: state.gold - cost
     }),
     log: ["Spent ".concat(cost, " gold on ").concat(context, ".")].concat(_toConsumableArray(state.log))
   });
@@ -1827,9 +1916,9 @@ function checkRelicTriggers(state, triggerEvent) {
     _step3;
   try {
     var _loop4 = function _loop4() {
-      var _relic$triggers2;
+      var _relic$triggers;
       var relic = _step3.value;
-      var effect = (_relic$triggers2 = relic.triggers) === null || _relic$triggers2 === void 0 ? void 0 : _relic$triggers2[triggerEvent];
+      var effect = (_relic$triggers = relic.triggers) === null || _relic$triggers === void 0 ? void 0 : _relic$triggers[triggerEvent];
       if (!effect) return 1; // continue
 
       // === handle DRINK_POTION effects ===
@@ -1863,41 +1952,18 @@ function checkRelicTriggers(state, triggerEvent) {
         var campaign = _objectSpread({}, updatedState.campaign);
         var newHealth = updatedState.health;
         var newMaxHealth = updatedState.maxHealth;
-        if (effect.bonusPages) {
-          campaign.pages += effect.bonusPages;
-        }
-        if (effect.bonusGold) {
-          campaign.gold += effect.bonusGold;
-        }
+        if (effect.bonusPages) campaign.pages += effect.bonusPages;
+        if (effect.bonusInk) campaign.ink += effect.bonusInk;
+        if (effect.bonusBooks) campaign.books += effect.bonusBooks;
         if (effect.bonusHealth) {
           newHealth += effect.bonusHealth;
           newMaxHealth += effect.bonusHealth;
         }
-        if (effect.bonusInk) {
-          campaign.ink += effect.bonusInk;
+        if (effect.bonusGold) {
+          updatedState = gainGold(updatedState, effect.bonusGold);
         }
-        if (effect.bonusBooks) {
-          campaign.books += effect.bonusBooks;
-        }
-
-        // handle ASSIGN_SHOP_PRICES effects
-
-        if (triggerEvent === TRIGGER_EVENTS.ASSIGN_SHOP_PRICES) {
-          if (effect.shopPriceMultiplier) {
-            state = _objectSpread(_objectSpread({}, state), {}, {
-              offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
-                shopfront: state.offerings.shopfront.map(function (entry) {
-                  var adjustedCost = Math.round(entry.item.cost * effect.shopPriceMultiplier);
-                  return _objectSpread(_objectSpread({}, entry), {}, {
-                    item: _objectSpread(_objectSpread({}, entry.item), {}, {
-                      cost: adjustedCost
-                    })
-                  });
-                })
-              }),
-              log: ["Applied shop price multiplier (".concat(effect.shopPriceMultiplier, ")")].concat(_toConsumableArray(state.log))
-            });
-          }
+        if (effect.bonusBaseBunnies) {
+          updatedState = increaseBaseBunnies(updatedState, effect.bonusBaseBunnies);
         }
         updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
           campaign: campaign,
@@ -1905,6 +1971,59 @@ function checkRelicTriggers(state, triggerEvent) {
           maxHealth: newMaxHealth,
           log: ["".concat(relic.name, " granted bonuses on relic pickup.")].concat(_toConsumableArray(updatedState.log))
         });
+      }
+
+      // === Handle SHOP PRICE ADJUSTMENT ===
+      if (triggerEvent === TRIGGER_EVENTS.ASSIGN_SHOP_PRICES && effect.shopPriceMultiplier) {
+        updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+          offerings: _objectSpread(_objectSpread({}, updatedState.offerings), {}, {
+            shopfront: updatedState.offerings.shopfront.map(function (entry) {
+              var adjustedCost = Math.round(entry.item.cost * effect.shopPriceMultiplier);
+              return _objectSpread(_objectSpread({}, entry), {}, {
+                item: _objectSpread(_objectSpread({}, entry.item), {}, {
+                  cost: adjustedCost
+                })
+              });
+            })
+          }),
+          log: ["Applied shop price multiplier (".concat(effect.shopPriceMultiplier, ")")].concat(_toConsumableArray(updatedState.log))
+        });
+      }
+
+      // === Handle REST effects ===
+      if (triggerEvent === TRIGGER_EVENTS.REST) {
+        if (effect.healPlayer) {
+          updatedState = heal(updatedState, effect.healPlayer);
+          updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+            log: ["".concat(relic.name, " healed you for ").concat(effect.healPlayer, " HP while resting.")].concat(_toConsumableArray(updatedState.log))
+          });
+        }
+        if (effect.goldAdd) {
+          updatedState = gainGold(updatedState, effect.goldAdd);
+          updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+            log: ["".concat(relic.name, " gave you ").concat(effect.goldAdd, " gold while resting.")].concat(_toConsumableArray(updatedState.log))
+          });
+        }
+        if (effect.permanentlyUpgradeRandomCardsInDeck > 0) {
+          var deck = updatedState.campaign.deck;
+          var numToUpgrade = Math.min(effect.permanentlyUpgradeRandomCardsInDeck, deck.length);
+          var shuffled = _toConsumableArray(deck).sort(function () {
+            return Math.random() - 0.5;
+          });
+          var toUpgrade = shuffled.slice(0, numToUpgrade);
+          var upgraded = toUpgrade.map(function (card) {
+            return upgradeCard(card, 1);
+          });
+          var upgradedDeck = deck.map(function (card) {
+            return toUpgrade.includes(card) ? upgraded[toUpgrade.indexOf(card)] : card;
+          });
+          updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+            campaign: _objectSpread(_objectSpread({}, updatedState.campaign), {}, {
+              deck: upgradedDeck
+            }),
+            log: ["".concat(relic.name, " permanently upgraded ").concat(numToUpgrade, " card(s) while resting.")].concat(_toConsumableArray(updatedState.log))
+          });
+        }
       }
     };
     for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
@@ -1920,10 +2039,13 @@ function checkRelicTriggers(state, triggerEvent) {
   });
 }
 function heal(state, amount) {
-  var newHealth = Math.min((state.health || 0) + amount, state.maxHealth || 0);
+  var current = state.health || 0;
+  var max = state.maxHealth || 0;
+  var newHealth = Math.min(current + amount, max);
+  var healedAmount = newHealth - current;
   return _objectSpread(_objectSpread({}, state), {}, {
     health: newHealth,
-    log: ["Healed ".concat(amount, " HP.")].concat(_toConsumableArray(state.log))
+    log: ["Healed ".concat(healedAmount, " HP.")].concat(_toConsumableArray(state.log))
   });
 }
 function transmuteCard(card) {
@@ -2036,6 +2158,16 @@ function gameReducer(state, action) {
       return screenChange(state, action.payload);
     case ACTIONS.POPULATE_SHOPFRONT:
       return populateShopfront(state);
+    case ACTIONS.INCREASE_BASE_BUNNIES:
+      return increaseBaseBunnies(state, action.payload);
+    case ACTIONS.GAIN_GOLD:
+      return gainGold(state, action.payload);
+    case ACTIONS.PRACTICE_WANDWORK:
+      return practiceWandwork(state);
+    case ACTIONS.LOOT_HOARD:
+      return lootHoard(state);
+    case ACTIONS.REST:
+      return rest(state);
     case ACTIONS.LOG_MESSAGE:
       return _objectSpread(_objectSpread({}, state), {}, {
         log: [action.payload].concat(_toConsumableArray(state.log))
@@ -2047,9 +2179,8 @@ function gameReducer(state, action) {
 }
 //#endregion
 //#region render function
-// mockup of render function - proper function pending
 function render(state, dispatch) {
-  var _state$modData3;
+  var _state$level2, _state$modData3;
   // Get or create output div
   var output = document.getElementById("output");
   if (!output) {
@@ -2059,9 +2190,30 @@ function render(state, dispatch) {
   }
   output.innerHTML = ""; // Clear previous contents
 
+  // render utility function
+  function renderModPhaseEntry(phase, label, modKey) {
+    if (state.currentPhase === phase && state.currentScreen !== SCREENS.MOD) {
+      var modBtn = document.createElement("button");
+      modBtn.textContent = label;
+      modBtn.style.fontSize = "1.5rem";
+      modBtn.style.padding = "1rem 2rem";
+      modBtn.onclick = function () {
+        modBtn.disabled = true; // prevent double click
+        dispatch({
+          type: ACTIONS.OPEN_MOD_SCREEN,
+          payload: {
+            mod: _defineProperty({}, modKey, true),
+            origin: phase
+          }
+        });
+      };
+      output.appendChild(modBtn);
+    }
+  }
+
   // === Game Info ===
   var info = document.createElement("div");
-  info.innerHTML = "\n    <h2>Game Info</h2>\n    <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n    <p><strong>Current Phase:</strong> ").concat(state.currentPhase, "</p>\n    <p><strong>Gold:</strong> ").concat(state.campaign.gold, "</p>\n    <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n    <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n    <p><strong>Relics:</strong> ").concat(state.campaign.relicBelt.map(function (r) {
+  info.innerHTML = "\n    <h2>Game Info</h2>\n    <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n    <p><strong>Phase:</strong> ").concat(state.currentPhase, " &nbsp;&nbsp; <strong>Level:</strong> ").concat((_state$level2 = state.level) !== null && _state$level2 !== void 0 ? _state$level2 : 0, "</p>\n    <p><strong>Gold:</strong> ").concat(state.gold, "</p>\n    <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n    <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n    <p><strong>Relics:</strong> ").concat(state.campaign.relicBelt.map(function (r) {
     return r.name;
   }).join(", ") || "None", "</p>\n  ");
   output.appendChild(info);
@@ -2193,18 +2345,18 @@ function render(state, dispatch) {
     output.appendChild(gemSection);
   }
   // === Shopfront Display ===
-  console.log("🔍 Rendering shopfront:", state.offerings.shopfront);
+
   if (state.currentPhase === PHASES.SHOP && state.currentScreen !== SCREENS.MOD && state.offerings.shopfront.length > 0) {
     var shopSection = document.createElement("div");
     shopSection.innerHTML = "<h3>Shop Inventory</h3>";
     var list = document.createElement("ul");
     state.offerings.shopfront.forEach(function (entry, index) {
-      var _entry$cost, _state$campaign$gold;
+      var _entry$item$cost, _entry$item, _state$gold;
       if (!entry || !entry.item || !entry.item.name) return;
       var li = document.createElement("li");
       var btn = document.createElement("button");
-      var cost = (_entry$cost = entry.cost) !== null && _entry$cost !== void 0 ? _entry$cost : 0;
-      var playerGold = (_state$campaign$gold = state.campaign.gold) !== null && _state$campaign$gold !== void 0 ? _state$campaign$gold : 0;
+      var cost = (_entry$item$cost = (_entry$item = entry.item) === null || _entry$item === void 0 ? void 0 : _entry$item.cost) !== null && _entry$item$cost !== void 0 ? _entry$item$cost : 0;
+      var playerGold = (_state$gold = state.gold) !== null && _state$gold !== void 0 ? _state$gold : 0;
       var disabled = cost > playerGold;
       btn.textContent = "".concat(entry.type.toUpperCase(), ": ").concat(entry.item.name, " (").concat(cost, "g)");
       if (disabled) {
@@ -2288,6 +2440,49 @@ function render(state, dispatch) {
     output.appendChild(modSection);
   }
 
+  // ======= render purge, transmute, and enchant phases (AKA mod phases) ======
+
+  renderModPhaseEntry(PHASES.PURGE, "Lethian Font", "purge");
+  renderModPhaseEntry(PHASES.TRANSMUTE, "Metamorphosis", "transmute");
+  renderModPhaseEntry(PHASES.ENCHANT, "Enchanted Dolmen", "upgrade");
+
+  // ====== render hoard phase= ======
+  if (state.currentPhase === PHASES.HOARD) {
+    var btn = document.createElement("button");
+    btn.textContent = "Loot Hoard";
+    btn.style.fontSize = "1.5rem";
+    btn.style.padding = "1rem 2rem";
+    btn.onclick = function () {
+      // Placeholder until lootHoard is implemented
+      dispatch({
+        type: "LOOT_HOARD"
+      }); // or just console.log("Loot Hoard")
+    };
+    output.appendChild(btn);
+  }
+  // ====== rest phase rendering ======
+  if (state.currentPhase === PHASES.REST) {
+    var restBtn = document.createElement("button");
+    restBtn.textContent = "Fireside Rest";
+    restBtn.style.fontSize = "1.5rem";
+    restBtn.style.padding = "1rem 2rem";
+    restBtn.onclick = function () {
+      dispatch({
+        type: "REST"
+      }); // Placeholder
+    };
+    var practiceBtn = document.createElement("button");
+    practiceBtn.textContent = "Practice Wandwork";
+    practiceBtn.style.fontSize = "1.5rem";
+    practiceBtn.style.padding = "1rem 2rem";
+    practiceBtn.onclick = function () {
+      dispatch({
+        type: "PRACTICE_WANDWORK"
+      }); // Placeholder
+    };
+    output.appendChild(restBtn);
+    output.appendChild(practiceBtn);
+  }
   // === Deck Inspect / Return Button ===
   //deck inspect button
   if ((state.currentScreen === SCREENS.MAIN || state.currentScreen === SCREENS.DECK) && state.campaign.deck.length > 0) {
@@ -2342,26 +2537,8 @@ window.onload = function () {
   createGameApp(createInitialState(), gameReducer, render);
 };
 
+//#region WIP
 // //------------------------------------------------WIP functions------------------------------------------------
-
-// //@@@@@@@@@@@@ rest functions @@@@@@@@@@@@
-// function beginRest(state) {
-//   // heals the player the appropriate amount based on the player's max health.
-//   //checks rest triggers.
-//   //displays the rest phase
-// }
-
-// function checkRestTriggers(state) {
-//   // Checks if the rest has any triggers that need to be applied
-// }
-
-// function endRest(state) {
-//   //closes the rest phase and advances the game state to the next phase.
-// }
-
-// function randomlyUpgradeCards(state, numberOfUpgrades) {
-//   // randomly upgrades a number of cards in the player's deck based on the number of upgrades.
-// }
 
 // //@@@@@@@@@@@@ combat functions @@@@@@@@@@@@
 
@@ -2501,8 +2678,6 @@ window.onload = function () {
 // function victory(state) {
 //   // Handles the victory phase, such as displaying a victory screen, allowing the player to continue to the next phase or return to the main menu.
 // }
-
-// // Render function - placeholder for UI rendering logic
 },{}],"../node_modules/parcel-bundler/src/builtins/hmr-runtime.js":[function(require,module,exports) {
 var global = arguments[3];
 var OVERLAY_ID = '__parcel__error__overlay__';
@@ -2528,7 +2703,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "52305" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "63010" + '/');
   ws.onmessage = function (event) {
     checkedAssets = {};
     assetsToAccept = [];
