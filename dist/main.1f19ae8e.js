@@ -158,12 +158,15 @@ var TRIGGER_EVENTS = Object.freeze({
   POTION_PICKUP: "POTION_PICKUP",
   DRINK_POTION: "DRINK_POTION",
   ASSIGN_SHOP_PRICES: "ASSIGN_SHOP_PRICES",
-  REST: "REST"
+  REST: "REST",
+  COMBAT_START: "COMBAT_START",
+  POPULATE_PATHS: "POPULATE_PATHS"
 });
 var PATHS = Object.freeze({
   EASY_FIGHT: "easy fight",
   MEDIUM_FIGHT: "medium fight",
   HARD_FIGHT: "hard fight",
+  BOSS_FIGHT: "boss fight",
   REST: "rest",
   SHOP: "shop",
   RELIC_OFFERING: "relicOffering",
@@ -295,6 +298,10 @@ var pathMap = Object.freeze((_Object$freeze2 = {}, _defineProperty(_defineProper
   rarity: RARITIES.COMMON,
   isFight: true,
   leadsTo: PHASES.COMBAT
+}), PATHS.BOSS_FIGHT, {
+  rarity: RARITIES.SPECIAL,
+  isFight: true,
+  leadsTo: PHASES.COMBAT
 }), PATHS.REST, {
   rarity: RARITIES.RARE,
   leadsTo: PHASES.REST
@@ -313,10 +320,10 @@ var pathMap = Object.freeze((_Object$freeze2 = {}, _defineProperty(_defineProper
 }), PATHS.ENCHANT, {
   rarity: RARITIES.RARE,
   leadsTo: PHASES.ENCHANT
-}), PATHS.POTION_OFFERING, {
+}), _defineProperty(_defineProperty(_defineProperty(_defineProperty(_Object$freeze2, PATHS.POTION_OFFERING, {
   rarity: RARITIES.RARE,
   leadsTo: PHASES.POTION_OFFERING
-}), _defineProperty(_defineProperty(_defineProperty(_Object$freeze2, PATHS.HOARD, {
+}), PATHS.HOARD, {
   rarity: RARITIES.MYTHIC,
   leadsTo: PHASES.HOARD
 }), PATHS.PURGE, {
@@ -508,7 +515,7 @@ var relicList = [{
   // not a pickup effect — save for COMBAT_VICTORY
   goldAddOnCombatVictory: 10
 }, {
-  name: "Magic Feather",
+  name: "Magic Quill",
   rarity: RARITIES.LEGENDARY,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
     bonusInk: 2
@@ -560,6 +567,12 @@ var relicList = [{
   rarity: RARITIES.UNCOMMON,
   triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
     permanentlyUpgradeRandomCardsInDeck: 1 // upgrade a random card in the deck when resting
+  })
+}, {
+  name: "Dousing Rod",
+  rarity: RARITIES.RARE,
+  triggers: _defineProperty({}, TRIGGER_EVENTS.POPULATE_PATHS, {
+    revealAnonymousPaths: true
   })
 }];
 var potionList = [{
@@ -661,14 +674,21 @@ function assignShopPrices(state) {
     log: ["Assigned prices to shop items."].concat(_toConsumableArray(state.log))
   });
 }
+function anonymizeObject(obj) {
+  return _objectSpread(_objectSpread({}, obj), {}, {
+    anonymousNameDisplay: true
+  });
+}
+
 //#endregion
 //#region reducer-action handlers
 function generateStarterDeck(state) {
-  var difficulty = state.campaign.difficulty;
-  if (!difficulty) {
-    console.error("Cannot generate starter deck without difficulty set.");
+  var difficulty = state.difficulty;
+  if (!difficulty || !difficultyModifiersMap[difficulty]) {
+    console.error("Cannot generate starter deck: invalid difficulty:", difficulty);
     return state;
   }
+  var modifiers = difficultyModifiersMap[difficulty];
   var deck = [];
 
   // 1. Add one of each basic mono card
@@ -708,8 +728,7 @@ function generateStarterDeck(state) {
   } finally {
     _iterator2.f();
   }
-  var extraCount = difficultyModifiersMap[difficulty].basicCardCountModifier;
-  for (var i = 0; i < extraCount; i++) {
+  for (var i = 0; i < modifiers.basicCardCountModifier; i++) {
     var card = generateRandomCard(state, {
       rarity: RARITIES.BASIC_POLY
     });
@@ -728,23 +747,20 @@ function generateStarterDeck(state) {
   });
 }
 function applyDifficultyModifiers(state) {
-  var difficulty = state.campaign.difficulty;
+  var difficulty = state.difficulty;
   if (!difficulty || !difficultyModifiersMap[difficulty]) {
     console.error("Invalid or missing difficulty:", difficulty);
     return state;
   }
   var modifiers = difficultyModifiersMap[difficulty];
-  var newCampaign = _objectSpread(_objectSpread({}, state.campaign), {}, {
+  return _objectSpread(_objectSpread({}, state), {}, {
     gold: state.gold + modifiers.goldModifier,
-    basicCardCount: state.campaign.basicCardCount + modifiers.basicCardCountModifier,
+    basicCardCount: state.basicCardCount + modifiers.basicCardCountModifier,
     luck: (state.luck || 0) + (modifiers.luckModifier || 0),
     shopPriceMultiplier: (state.shopPriceMultiplier || 1) + (modifiers.shopPriceMultiplierModifier || 0),
-    restHealthRestore: (state.restHealthRestore || 0) + (modifiers.restHealthRestoreModifier || 0)
-  });
-  return _objectSpread(_objectSpread({}, state), {}, {
+    restHealthRestore: (state.restHealthRestore || 0) + (modifiers.restHealthRestoreModifier || 0),
     maxHealth: state.maxHealth + modifiers.maxHealthModifier,
     health: state.health + modifiers.maxHealthModifier,
-    campaign: newCampaign,
     log: ["Applied difficulty modifiers for ".concat(difficulty, ".")].concat(_toConsumableArray(state.log))
   });
 }
@@ -907,20 +923,34 @@ function populateGemOfferings(state) {
 function populatePathOfferings(state) {
   var _state$campaign$deck;
   var luck = state.luck || 0;
+  var misery = state.misery || 0;
+  var level = state.level || 0;
 
-  // Step 1: Pick the fight path
+  // === Step 0: Boss override ===
+  if ([15, 30, 45].includes(level)) {
+    var bossPath = _objectSpread({
+      path: PATHS.BOSS_FIGHT
+    }, pathMap[PATHS.BOSS_FIGHT]);
+    return _objectSpread(_objectSpread({}, state), {}, {
+      offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
+        paths: [bossPath, bossPath, bossPath]
+      }),
+      log: ["Boss floor! All paths lead to a boss fight."].concat(_toConsumableArray(state.log))
+    });
+  }
+
+  // === Step 1: Always pick 1 fight path ===
   var fightWeights = _defineProperty(_defineProperty(_defineProperty({}, PATHS.EASY_FIGHT, 3), PATHS.MEDIUM_FIGHT, 2), PATHS.HARD_FIGHT, 1);
   var fightPathKey = weightedRandomChoice(fightWeights);
   var fightPath = _objectSpread({
     path: fightPathKey
   }, pathMap[fightPathKey]);
 
-  // Step 2: Create a pool of available non-fight paths
-  var nonFightPaths = Object.entries(pathMap).filter(function (_ref4) {
-    var _ref5 = _slicedToArray(_ref4, 2),
-      key = _ref5[0],
-      data = _ref5[1];
-    return !data.isFight && key !== fightPathKey;
+  // === Step 2: Create a pool of all valid paths (excluding duplicate of picked fight) ===
+  var allPaths = Object.entries(pathMap).filter(function (_ref4) {
+    var _ref5 = _slicedToArray(_ref4, 1),
+      key = _ref5[0];
+    return key !== fightPathKey;
   }).map(function (_ref6) {
     var _ref7 = _slicedToArray(_ref6, 2),
       path = _ref7[0],
@@ -930,24 +960,23 @@ function populatePathOfferings(state) {
     }, data);
   });
 
-  // Step 2a: If all cards are socketed, exclude GEM_OFFERING
+  // === Step 2a: Exclude GEM_OFFERING if all cards are socketed ===
   var allCardsSocketed = ((_state$campaign$deck = state.campaign.deck) === null || _state$campaign$deck === void 0 ? void 0 : _state$campaign$deck.length) > 0 && state.campaign.deck.every(function (card) {
     return card.gem != null;
   });
-  var filteredNonFightPaths = nonFightPaths.filter(function (pathObj) {
+  var filteredPaths = allPaths.filter(function (pathObj) {
     if (pathObj.path === PATHS.GEM_OFFERING && allCardsSocketed) return false;
     return true;
   });
-  // Step 3: Pick two rarities based on player luck
+
+  // === Step 3: Pick first two paths using rarity weights ===
   var rarityWeights = getLuckAdjustedRarityWeights(luck);
   var chosenRarities = [weightedRandomChoice(rarityWeights), weightedRandomChoice(rarityWeights)];
-
-  // Step 4: For each rarity, pick a path from the pool
   var chosenPaths = [];
   var usedPaths = new Set([fightPathKey]);
   var _loop3 = function _loop3() {
     var rarity = _chosenRarities[_i3];
-    var candidates = filteredNonFightPaths.filter(function (p) {
+    var candidates = filteredPaths.filter(function (p) {
       return p.rarity === rarity && !usedPaths.has(p.path);
     });
     if (candidates.length > 0) {
@@ -960,8 +989,8 @@ function populatePathOfferings(state) {
     _loop3();
   }
 
-  // Step 5: Fallback – if fewer than 2 non-fight paths were picked, fill from remaining
-  var remainingPool = filteredNonFightPaths.filter(function (p) {
+  // === Step 4: Fill in missing 2nd path if needed
+  var remainingPool = filteredPaths.filter(function (p) {
     return !usedPaths.has(p.path);
   });
   while (chosenPaths.length < 2 && remainingPool.length > 0) {
@@ -970,19 +999,71 @@ function populatePathOfferings(state) {
     usedPaths.add(pick.path);
     chosenPaths.push(pick);
   }
-  var paths = [fightPath].concat(chosenPaths);
-  console.log("Populated path options:", paths);
-  return _objectSpread(_objectSpread({}, state), {}, {
-    offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
-      paths: paths
+
+  // === Step 5: Optional override for 3rd path using misery + luck if both are fights
+  var firstTwoAreFights = chosenPaths.every(function (p) {
+    return p.isFight;
+  });
+  var finalPaths = [fightPath].concat(chosenPaths);
+  var newMisery = misery;
+  if (firstTwoAreFights && misery > 0 && remainingPool.length > 0) {
+    var thirdOptions = remainingPool.filter(function (p) {
+      return !usedPaths.has(p.path);
+    });
+    if (thirdOptions.length > 0) {
+      var nonFights = thirdOptions.filter(function (p) {
+        return !p.isFight;
+      });
+      var fights = thirdOptions.filter(function (p) {
+        return p.isFight;
+      });
+      var weightedPool = [];
+      nonFights.forEach(function (p) {
+        for (var i = 0; i < misery + luck; i++) weightedPool.push(p);
+      });
+      fights.forEach(function (p) {
+        weightedPool.push(p); // 1 weight each
+      });
+      if (weightedPool.length > 0) {
+        var _pick = weightedPool[Math.floor(Math.random() * weightedPool.length)];
+        usedPaths.add(_pick.path);
+        finalPaths[2] = _pick;
+        if (!_pick.isFight) newMisery = misery - 1;
+      }
+    }
+  }
+
+  // === Step 6: Check again if all 3 are fights and increment misery
+  var allFights = finalPaths.every(function (p) {
+    return p.isFight;
+  });
+  if (allFights) newMisery++;
+  console.log("Populated path options:", finalPaths);
+
+  // === Step 6.5: Randomly anonymize one path based on (50% - luck) chance
+  var anonChance = Math.max(0, 0.5 - (state.luck || 0) * 0.01); // luck is per % point
+  var anonIndex = Math.floor(Math.random() * finalPaths.length);
+  if (Math.random() < anonChance) {
+    finalPaths[anonIndex] = anonymizeObject(finalPaths[anonIndex]);
+  }
+
+  // === Step 7: Apply relic triggers for POPULATE_PATH
+  var triggerResult = checkRelicTriggers(state, TRIGGER_EVENTS.POPULATE_PATH, {
+    payload: finalPaths
+  });
+  var updatedPaths = triggerResult.result || finalPaths;
+  var updatedState = _objectSpread({}, triggerResult);
+  return _objectSpread(_objectSpread({}, updatedState), {}, {
+    misery: newMisery,
+    offerings: _objectSpread(_objectSpread({}, updatedState.offerings), {}, {
+      paths: updatedPaths
     }),
-    log: ["Populated path options."].concat(_toConsumableArray(state.log))
+    log: [allFights ? "Populated path options (all fights \u2014 misery increased to ".concat(newMisery, ").") : "Populated path options."].concat(_toConsumableArray(updatedState.log))
   });
 }
 function pickCard(state, index) {
   var phase = state.currentPhase;
-  var offerings = state.offerings;
-  var campaign = state.campaign;
+  var offerings = _objectSpread({}, state.offerings);
   var sourceArrayName = null;
   if (offerings.cards && index < offerings.cards.length) {
     sourceArrayName = "cards";
@@ -997,53 +1078,49 @@ function pickCard(state, index) {
   var sourceArray = offerings[sourceArrayName];
   var entry = sourceArray[index];
 
-  // 🛠️ Fix: unwrap the card object if we're in shopfront
+  // 🛠️ Unwrap if from shop
   var pickedCard = sourceArrayName === "shopfront" ? entry.item : entry;
   if (!pickedCard) {
     console.error("No card found at index:", index);
     return state;
   }
 
-  // === 2. If in shop, charge gold ===
+  // === 2. Charge gold if in shop ===
   var updatedState = state;
   if (phase === PHASES.SHOP) {
     var cost = entry.cost || 20;
     var charged = chargeGoldCost(state, cost, "card");
-    if (charged === state) {
-      return state; // not enough gold
-    }
+    if (charged === state) return state; // not enough gold
     updatedState = charged;
   }
 
   // === 3. Add to campaign deck ===
-  var updatedDeck = [].concat(_toConsumableArray(updatedState.campaign.deck), [pickedCard]);
+  var updatedCampaign = _objectSpread(_objectSpread({}, updatedState.campaign), {}, {
+    deck: [].concat(_toConsumableArray(updatedState.campaign.deck), [pickedCard])
+  });
 
-  // === 4. Remove from source array ===
+  // === 4. Remove from offerings ===
   var updatedOfferings = _objectSpread(_objectSpread({}, updatedState.offerings), {}, _defineProperty({}, sourceArrayName, sourceArray.filter(function (_, i) {
     return i !== index;
   })));
 
-  // === 5. Apply triggers
+  // === 5. Apply triggers ===
   var newState = _objectSpread(_objectSpread({}, updatedState), {}, {
-    campaign: _objectSpread(_objectSpread({}, updatedState.campaign), {}, {
-      deck: updatedDeck
-    }),
+    campaign: updatedCampaign,
     offerings: updatedOfferings,
     log: ["Picked card: ".concat(pickedCard.name)].concat(_toConsumableArray(updatedState.log))
   });
-  var triggerResult = checkRelicTriggers(newState, TRIGGER_EVENTS.CARD_PICKUP, {
+  newState = checkRelicTriggers(newState, TRIGGER_EVENTS.CARD_PICKUP, {
     payload: pickedCard
   });
-  newState = triggerResult;
 
-  // === 6. Advance phase if in card offering ===
+  // === 6. Trash unchosen cards if from offering ===
   if (phase === PHASES.CARD_OFFERING) {
+    var trashed = sourceArray.filter(function (_, i) {
+      return i !== index;
+    });
     newState = _objectSpread(_objectSpread({}, newState), {}, {
-      campaign: _objectSpread(_objectSpread({}, newState.campaign), {}, {
-        trashPile: [].concat(_toConsumableArray(newState.campaign.trashPile || []), _toConsumableArray(sourceArray.filter(function (_, i) {
-          return i !== index;
-        })))
-      }),
+      trashPile: [].concat(_toConsumableArray(newState.trashPile || []), _toConsumableArray(trashed)),
       offerings: _objectSpread(_objectSpread({}, newState.offerings), {}, _defineProperty({}, sourceArrayName, []))
     });
     newState = handlePhaseTransitions(advancePhaseTo(newState, PHASES.PATH_SELECTION));
@@ -1052,10 +1129,9 @@ function pickCard(state, index) {
 }
 function pickRelic(state, index) {
   var phase = state.currentPhase;
-  var campaign = _objectSpread({}, state.campaign);
   var offerings = _objectSpread({}, state.offerings);
 
-  // Determine the source array
+  // === 1. Determine the source array ===
   var sourceArrayName = null;
   if (offerings.relics && index < offerings.relics.length) {
     sourceArrayName = "relics";
@@ -1070,61 +1146,63 @@ function pickRelic(state, index) {
   var sourceArray = offerings[sourceArrayName];
   var entry = sourceArray[index];
 
-  // 🛠️ Fix: unwrap relic from entry if it's from shopfront
+  // 🛠️ Unwrap relic from shopfront if needed
   var pickedRelic = sourceArrayName === "shopfront" ? entry.item : entry;
   if (!pickedRelic) {
     console.error("No relic found at index:", index);
     return state;
   }
 
-  // === Charge gold if in shop ===
+  // === 2. Charge gold if in shop ===
   var updatedState = state;
   if (phase === PHASES.SHOP) {
     var relicCost = entry.cost || 50;
     var chargedState = chargeGoldCost(state, relicCost, "relic");
-    if (chargedState === state) {
-      return state; // not enough gold
-    }
+    if (chargedState === state) return state; // not enough gold
     updatedState = chargedState;
   }
 
-  // === Add to relic belt ===
-  campaign.relicBelt = [].concat(_toConsumableArray(updatedState.campaign.relicBelt), [pickedRelic]);
+  // === 3. Add relic to belt ===
+  updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+    relicBelt: [].concat(_toConsumableArray(updatedState.relicBelt), [pickedRelic])
+  });
 
-  // === Remove from source array ===
+  // === 4. Remove the picked relic from offerings ===
   offerings[sourceArrayName] = sourceArray.filter(function (_, i) {
     return i !== index;
   });
 
-  // === Trash rest if in offering phase ===
+  // === 5. Trash unchosen relics if from offering phase ===
   var isOfferingPhase = [PHASES.MYTHIC_RELIC_OFFERING, PHASES.RELIC_OFFERING].includes(phase);
+  var updatedTrashPile = updatedState.trashPile;
   if (isOfferingPhase) {
-    campaign.trashPile = [].concat(_toConsumableArray(campaign.trashPile), _toConsumableArray(offerings.relics.filter(function (_, i) {
+    updatedTrashPile = [].concat(_toConsumableArray(updatedTrashPile || []), _toConsumableArray(offerings.relics.filter(function (_, i) {
       return i !== index;
     })));
     offerings.relics = [];
   }
+
+  // === 6. Build the new state ===
   var newState = _objectSpread(_objectSpread({}, updatedState), {}, {
-    campaign: campaign,
+    trashPile: updatedTrashPile,
+    // ✅ Root-level trash pile
     offerings: offerings,
     log: ["Picked relic: ".concat(pickedRelic.name)].concat(_toConsumableArray(updatedState.log))
   });
 
-  // === Apply relic pickup triggers ===
+  // === 7. Trigger relic effects
   var triggeredState = checkRelicTriggers(newState, TRIGGER_EVENTS.RELIC_PICKUP, {
     relic: pickedRelic
   });
 
-  // === Advance phase if needed ===
+  // === 8. Advance phase if in offering
   if (isOfferingPhase) {
-    console.log("Advancing to path selection after picking relic");
     return handlePhaseTransitions(advancePhaseTo(triggeredState, PHASES.PATH_SELECTION));
   }
   return triggeredState;
 }
 function pickPotion(state, index) {
   var phase = state.currentPhase;
-  var campaign = _objectSpread({}, state.campaign);
   var offerings = _objectSpread({}, state.offerings);
 
   // === 1. Determine the source array ===
@@ -1140,7 +1218,7 @@ function pickPotion(state, index) {
   var sourceArray = offerings[sourceArrayName];
   var entry = sourceArray[index];
 
-  // 🛠️ Fix: unwrap the potion object if from shopfront
+  // 🛠️ Unwrap the potion if it came from the shop
   var pickedPotion = sourceArrayName === "shopfront" ? entry.item : entry;
   if (!pickedPotion) {
     console.error("No potion found at index:", index);
@@ -1155,34 +1233,41 @@ function pickPotion(state, index) {
     if (charged === state) return state; // not enough gold
     updatedState = charged;
   }
+
+  // === 3. Apply pickup relic triggers (may upgrade the potion) ===
   var triggerResult = checkRelicTriggers(updatedState, TRIGGER_EVENTS.POTION_PICKUP, {
     payload: pickedPotion
   });
   var triggeredPotion = triggerResult.result;
-  var updatedPotionBelt = [].concat(_toConsumableArray(updatedState.campaign.potionBelt), [triggeredPotion]);
+  updatedState = _objectSpread({}, triggerResult); // ensures any other state changes are included
 
-  // === 4. Remove from source ===
+  // === 4. Add to top-level potion belt ===
+  var updatedPotionBelt = [].concat(_toConsumableArray(updatedState.potionBelt), [triggeredPotion]);
+
+  // === 5. Remove the picked potion from the offerings ===
   offerings[sourceArrayName] = sourceArray.filter(function (_, i) {
     return i !== index;
   });
 
-  // === 5. Discard rest if in offering ===
+  // === 6. Trash unchosen potions if from offering ===
+  var updatedTrashPile = updatedState.trashPile;
   if (phase === PHASES.POTION_OFFERING) {
-    campaign.trashPile = [].concat(_toConsumableArray(campaign.trashPile), _toConsumableArray(offerings.potions.filter(function (_, i) {
+    updatedTrashPile = [].concat(_toConsumableArray(updatedTrashPile || []), _toConsumableArray(offerings.potions.filter(function (_, i) {
       return i !== index;
     })));
     offerings.potions = [];
   }
+
+  // === 7. Build the new state ===
   var newState = _objectSpread(_objectSpread({}, updatedState), {}, {
-    campaign: _objectSpread(_objectSpread({}, updatedState.campaign), {}, {
-      potionBelt: updatedPotionBelt,
-      trashPile: campaign.trashPile || updatedState.campaign.trashPile
-    }),
+    potionBelt: updatedPotionBelt,
+    trashPile: updatedTrashPile,
+    // ✅ Root-level trash pile
     offerings: offerings,
     log: ["Picked potion: ".concat(pickedPotion.name)].concat(_toConsumableArray(updatedState.log))
   });
 
-  // === 6. Advance phase if in offering ===
+  // === 8. Advance if from offering ===
   if (phase === PHASES.POTION_OFFERING) {
     return handlePhaseTransitions(advancePhaseTo(newState, PHASES.PATH_SELECTION));
   }
@@ -1201,10 +1286,10 @@ function drinkPotion(state, potion) {
   }
 
   // === 2. Remove potion from potionBelt and add to trash ===
-  var newPotionBelt = updatedState.campaign.potionBelt.filter(function (p) {
+  var newPotionBelt = updatedState.potionBelt.filter(function (p) {
     return p !== potion;
   });
-  var newTrash = [].concat(_toConsumableArray(updatedState.campaign.trashPile), [potion]);
+  var newTrash = [].concat(_toConsumableArray(updatedState.trashPile), [potion]);
   updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
     campaign: _objectSpread(_objectSpread({}, updatedState.campaign), {}, {
       potionBelt: newPotionBelt,
@@ -1239,7 +1324,7 @@ function openModScreen(state, mod) {
     });
     state = _objectSpread(_objectSpread({}, state), {}, {
       campaign: _objectSpread(_objectSpread({}, state.campaign), {}, {
-        trashPile: [].concat(_toConsumableArray(state.campaign.trashPile), _toConsumableArray(discardedGems))
+        trashPile: [].concat(_toConsumableArray(state.trashPile), _toConsumableArray(discardedGems))
       }),
       offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
         gems: [] // clear offering gems
@@ -1331,7 +1416,7 @@ function populateShopfront(state) {
   var discardedItems = previousItems.map(function (entry) {
     return entry.item;
   });
-  var updatedTrash = [].concat(_toConsumableArray(state.campaign.trashPile || []), _toConsumableArray(discardedItems));
+  var updatedTrash = [].concat(_toConsumableArray(state.trashPile || []), _toConsumableArray(discardedItems));
   // === Step 1: Ensure 1 of each type ===
   var guaranteedTypes = ["relic", "potion", "card", "gem"];
   guaranteedTypes.forEach(function (type) {
@@ -1490,37 +1575,36 @@ function createInitialState() {
     log: [],
     currentScreen: SCREENS.MAIN,
     currentPhase: PHASES.MAIN_MENU,
+    basicCardCount: 5,
+    restHealthRestore: 10,
+    shopPriceMultiplier: 1,
+    difficulty: null,
     maxHealth: 0,
     health: 0,
     baseBunnies: 0,
     gold: 0,
-    shopPriceMultiplier: 1,
-    restHealthRestore: 10,
-    hoardsLooted: 0,
     luck: 0,
     level: 0,
+    misery: 0,
+    hoardsLooted: 0,
     defeatedEnemies: [],
+    trashPile: [],
+    relicBelt: [],
+    potionBelt: [],
     campaign: {
-      difficulty: null,
       deck: [],
-      relicBelt: [],
-      potionBelt: [],
-      trashPile: [],
-      basicCardCount: 5,
       ink: 3,
       books: 1,
       pages: 3,
-      handSize: 5,
-      enemy: null
+      handSize: 5
     },
-    battle: {
+    combat: {
       deck: [],
       hand: [],
       graveyard: [],
       exile: [],
       spellbook: [],
-      relicBelt: [],
-      potionBelt: [],
+      baseBunnies: 0,
       ink: 0,
       maxInk: 0,
       books: 0,
@@ -1660,9 +1744,9 @@ function generateRandomRelic(state) {
     _ref0$rarity = _ref0.rarity,
     rarity = _ref0$rarity === void 0 ? null : _ref0$rarity;
   var luck = state.luck || 0;
-  var ownedRelics = new Set([].concat(_toConsumableArray(state.campaign.relicBelt.map(function (r) {
+  var ownedRelics = new Set([].concat(_toConsumableArray(state.relicBelt.map(function (r) {
     return r.name;
-  })), _toConsumableArray(state.campaign.trashPile.map(function (r) {
+  })), _toConsumableArray(state.trashPile.map(function (r) {
     return r.name;
   }))));
   var GOLD_BAG = "Gold Bag";
@@ -1912,7 +1996,7 @@ function checkRelicTriggers(state, triggerEvent) {
   var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
   var updatedState = _objectSpread({}, state);
   var result = context.payload || null;
-  var _iterator3 = _createForOfIteratorHelper(updatedState.campaign.relicBelt),
+  var _iterator3 = _createForOfIteratorHelper(updatedState.relicBelt),
     _step3;
   try {
     var _loop4 = function _loop4() {
@@ -2025,6 +2109,22 @@ function checkRelicTriggers(state, triggerEvent) {
           });
         }
       }
+
+      // === Handle POPULATE PATH effects ===
+
+      if (event === TRIGGER_EVENTS.POPULATE_PATHS && triggerData.revealAnonymousPaths) {
+        var updatedPaths = state.offerings.paths.map(function (path) {
+          return path.anonymousNameDisplay ? _objectSpread(_objectSpread({}, path), {}, {
+            anonymousNameDisplay: false
+          }) : path;
+        });
+        state = _objectSpread(_objectSpread({}, state), {}, {
+          offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
+            paths: updatedPaths
+          }),
+          log: ["".concat(relic.name, " revealed a hidden path.")].concat(_toConsumableArray(state.log))
+        });
+      }
     };
     for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
       if (_loop4()) continue;
@@ -2071,7 +2171,7 @@ function purgeCard(state, card) {
   var updatedDeck = state.campaign.deck.filter(function (c) {
     return c !== card;
   });
-  var updatedTrash = [].concat(_toConsumableArray(state.campaign.trashPile || []), [card]);
+  var updatedTrash = [].concat(_toConsumableArray(state.trashPile || []), [card]);
   return _objectSpread(_objectSpread({}, state), {}, {
     campaign: _objectSpread(_objectSpread({}, state.campaign), {}, {
       deck: updatedDeck,
@@ -2091,15 +2191,14 @@ function gameReducer(state, action) {
       });
     case ACTIONS.SET_DIFFICULTY:
       {
-        if (state.campaign.difficulty === action.payload) {
+        if (state.difficulty === action.payload) {
           console.log("Difficulty already set to", action.payload);
           return state;
         }
         console.log("Difficulty set to ".concat(action.payload));
         return _objectSpread(_objectSpread({}, state), {}, {
-          campaign: _objectSpread(_objectSpread({}, state.campaign), {}, {
-            difficulty: action.payload
-          }),
+          difficulty: action.payload,
+          // ✅ store at root
           log: ["Difficulty set to ".concat(action.payload, ".")].concat(_toConsumableArray(state.log))
         });
       }
@@ -2139,7 +2238,7 @@ function gameReducer(state, action) {
     case ACTIONS.DRINK_POTION:
       {
         var potionIndex = action.payload;
-        var potionToDrink = state.campaign.potionBelt[potionIndex];
+        var potionToDrink = state.potionBelt[potionIndex];
         if (!potionToDrink) {
           console.error("Invalid potion index:", potionIndex);
           return state;
@@ -2213,9 +2312,9 @@ function render(state, dispatch) {
 
   // === Game Info ===
   var info = document.createElement("div");
-  info.innerHTML = "\n    <h2>Game Info</h2>\n    <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n    <p><strong>Phase:</strong> ").concat(state.currentPhase, " &nbsp;&nbsp; <strong>Level:</strong> ").concat((_state$level2 = state.level) !== null && _state$level2 !== void 0 ? _state$level2 : 0, "</p>\n    <p><strong>Gold:</strong> ").concat(state.gold, "</p>\n    <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n    <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n    <p><strong>Relics:</strong> ").concat(state.campaign.relicBelt.map(function (r) {
+  info.innerHTML = "\n  <h2>Game Info</h2>\n  <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n  <p><strong>Phase:</strong> ").concat(state.currentPhase, " &nbsp;&nbsp; <strong>Level:</strong> ").concat((_state$level2 = state.level) !== null && _state$level2 !== void 0 ? _state$level2 : 0, "</p>\n  <p><strong>Gold:</strong> ").concat(state.gold, "</p>\n  <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n  <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n  <p><strong>Relics:</strong> ").concat(state.relicBelt.map(function (r) {
     return r.name;
-  }).join(", ") || "None", "</p>\n  ");
+  }).join(", ") || "None", "</p>\n");
   output.appendChild(info);
 
   // === Log ===
@@ -2274,7 +2373,13 @@ function render(state, dispatch) {
     pathSection.innerHTML = "<h3>Choose a Path</h3>";
     state.offerings.paths.forEach(function (path, index) {
       var btn = document.createElement("button");
-      btn.textContent = "".concat(path.path, " (").concat(path.rarity, ")").concat(path.isFight ? " [FIGHT]" : "");
+
+      // === Conditionally render based on anonymity ===
+      if (path.anonymousNameDisplay) {
+        btn.textContent = "???";
+      } else {
+        btn.textContent = "".concat(path.path, " (").concat(path.rarity, ")").concat(path.isFight ? " [FIGHT]" : "");
+      }
       btn.onclick = function () {
         return dispatch({
           type: ACTIONS.PICK_PATH,
@@ -2512,14 +2617,15 @@ function render(state, dispatch) {
   }
 
   // === Always-Visible Potion Belt ===
-  if (state.campaign.potionBelt && state.campaign.potionBelt.length > 0) {
+
+  // === Always-Visible Potion Belt ===
+  if (state.potionBelt && state.potionBelt.length > 0) {
     var beltSection = document.createElement("div");
     beltSection.innerHTML = "<h3>Your Potions</h3>";
-    state.campaign.potionBelt.forEach(function (potion, index) {
+    state.potionBelt.forEach(function (potion, index) {
       var btn = document.createElement("button");
       btn.textContent = potion.name;
       btn.onclick = function () {
-        // We'll implement this next
         dispatch({
           type: ACTIONS.DRINK_POTION,
           payload: index
@@ -2538,27 +2644,40 @@ window.onload = function () {
 };
 
 //#region WIP
-// //------------------------------------------------WIP functions------------------------------------------------
+// //------------------------------------------------WIP functions for MVP ------------------------------------------------
 
 // //@@@@@@@@@@@@ combat functions @@@@@@@@@@@@
 
+// edits needed to render function:
+// should display the enemy HP in a big square box in big font, the spellbook (effectively a row of grey squares, with one square per state.combat.pages), a "cast spellbook" button and a "BUNNIES:" display that can show numnbers on the same row, and the player's hand (a row of cards)(in that order).
+
+// function initializeCombatPhase(state, path) {
+// this function handles the start of combat. It should be called in the phase transition handler, when the the player selects one of the four combat paths (easy, medium, hard, or boss).
+// the function will generate an enemy by calling the generateenemy funciton.
+// then, it will prepare the combat deck. This is a deep, exact copy of the campaign deck.
+// next, it will set the combat state, copying all corresponding values over from the campaign state and rest of state.
+
+// specifically, the campaign values of:
+// (campaign)   ink: 3, =====>  (combat) ink: 0, maxInk: 0,
+// books: 1, =====>  books: 0, maxBooks: 0,
+// pages: 3, ====>   pages: 0,maxPages: 0,
+// handSize: 5, ====> handSize: 5,
+// also, the state.baseBunnies vlaue gets copied over to combat.baseBunnies.
+
+//
+
+// finally, it will check for any combat start triggers.
+//}
+
 // function generateEnemy(state, path) {
-//   // assigns an enemy to the path based on the path's difficulty and type.
-// }
+//   // generates an enemy based on the path's difficulty and game level.
+// first checks the path
+//  // enemies are objects with these properties: name, health, loot.
+//  names are created by combining one word from each of these two lists:
+var vegetables = ["carrot", "broccoli", "spinach", "kale", "zucchini", "eggplant", "cauliflower", "cabbage", "lettuce", "beet", "radish", "turnip", "peas", "green bean", "asparagus", "sweet potato", "pumpkin", "bell pepper", "celery", "onion"];
+// and
 
-// function startCombat(state, enemy) {
-//   // initializes the battle phase with the selected enemy.
-//   // sets up the battle stats, including health, deck, hand, etc.
-//   // advances the game state to the battle phase.
-//   // creates a new spellbook (effectively a 'turn')
-//   //checks for any combat start triggers.
-//   console.log("Combat started against:", enemy.name);
-//   state.battle.phase = "battle";
-//   state.battle.enemy = enemy;
-// }
-
-// function checkStartCombatTriggers(state) {
-//   // Checks if the enemy has any combat start triggers that need to be applied
+//   // assigns the enemy to state.combat.enemy based on the path name and game level.
 // }
 
 // function newBook(state) {
@@ -2703,7 +2822,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "63010" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "63233" + '/');
   ws.onmessage = function (event) {
     checkedAssets = {};
     assetsToAccept = [];
