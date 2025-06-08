@@ -147,6 +147,19 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
 function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
 function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+var ENEMY_ABILITIES = Object.freeze({
+  INK_DRINK: "inkDrink",
+  DOUBLE_HEALTH: "doubleHealth",
+  HAND_SIZE_REDUCTION: "handSizeReduction",
+  ADD_ONE_PEBBLE: "addOnePebble",
+  ADD_TWO_MERCURY: "addTwoMercury",
+  ADD_THREE_CLUTTER: "addThreeClutter"
+});
+var SPECIAL_CARD_SUBTYPES = Object.freeze({
+  CURSE: "curse",
+  UNIQUE: "unique",
+  STATUS: "status"
+});
 var DIFFICULTIES = Object.freeze({
   EASY: "easy",
   MEDIUM: "medium",
@@ -181,9 +194,11 @@ var PATHS = Object.freeze({
 var SCREENS = Object.freeze({
   MAIN: "main view",
   DECK: "inspect deck",
-  RELICS: "inspect relic belt",
   SETTINGS: "settings",
-  MOD: "modscreen"
+  MOD: "modscreen",
+  COMBAT_DECK: "combat deck",
+  GRAVEYARD: "graveyard",
+  EXILE: "exile"
 });
 var RARITIES = Object.freeze({
   BASIC_POLY: "basic-poly",
@@ -252,7 +267,11 @@ var ACTIONS = Object.freeze({
 var CARD_TYPES = Object.freeze({
   INSTANT: "instant",
   // resolves immediately when played, does not go to the spellbook.
-  SPELL: "spell" // goes to the spellbook when played, resolves when the spellbook is cast.
+  SPELL: "spell",
+  // goes to the spellbook when played, resolves when the spellbook is cast.
+  CURSE: "curse",
+  // negative card that can be removed or purged.
+  STATUS: "status" // temporary effect card, like a buff or debuff.
 });
 var REST_OPTIONS = Object.freeze({
   HEAL: "heal",
@@ -268,7 +287,9 @@ var difficultyModifiersMap = Object.freeze(_defineProperty(_defineProperty(_defi
   luckModifier: 2,
   shopPriceMultiplierModifier: -0.2,
   // 20% cheaper shop prices
-  restHealthRestoreModifier: 30 // heal 30 health when resting
+  restHealthRestoreModifier: 30,
+  // heal 30 health when resting
+  enemyHealthMultiplierModifier: -0.2 // 20% less health for enemies
 }), DIFFICULTIES.MEDIUM, {
   maxHealthModifier: 75,
   goldModifier: 10,
@@ -276,7 +297,9 @@ var difficultyModifiersMap = Object.freeze(_defineProperty(_defineProperty(_defi
   luckModifier: 1,
   shopPriceMultiplierModifier: 0,
   // normal shop prices
-  restHealthRestoreModifier: 25 // heal 20 health when resting
+  restHealthRestoreModifier: 25,
+  // heal 20 health when resting
+  enemyHealthMultiplierModifier: 0
 }), DIFFICULTIES.HARD, {
   maxHealthModifier: 50,
   goldModifier: 0,
@@ -284,24 +307,30 @@ var difficultyModifiersMap = Object.freeze(_defineProperty(_defineProperty(_defi
   luckModifier: 0,
   shopPriceMultiplierModifier: 0.2,
   // 20% more expensive shop prices
-  restHealthRestoreModifier: 20 // heal 20 health when resting
+  restHealthRestoreModifier: 20,
+  // heal 20 health when resting
+  enemyHealthMultiplierModifier: 0.2 // 20% more health for enemies
 }));
 var pathMap = Object.freeze((_Object$freeze2 = {}, _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_Object$freeze2, PATHS.EASY_FIGHT, {
   rarity: RARITIES.COMMON,
   isFight: true,
-  leadsTo: PHASES.COMBAT
+  leadsTo: PHASES.COMBAT,
+  difficulty: DIFFICULTIES.EASY
 }), PATHS.MEDIUM_FIGHT, {
   rarity: RARITIES.COMMON,
   isFight: true,
-  leadsTo: PHASES.COMBAT
+  leadsTo: PHASES.COMBAT,
+  difficulty: DIFFICULTIES.MEDIUM
 }), PATHS.HARD_FIGHT, {
   rarity: RARITIES.COMMON,
   isFight: true,
-  leadsTo: PHASES.COMBAT
+  leadsTo: PHASES.COMBAT,
+  difficulty: DIFFICULTIES.HARD
 }), PATHS.BOSS_FIGHT, {
   rarity: RARITIES.SPECIAL,
   isFight: true,
-  leadsTo: PHASES.COMBAT
+  leadsTo: PHASES.COMBAT,
+  difficulty: "boss"
 }), PATHS.REST, {
   rarity: RARITIES.RARE,
   leadsTo: PHASES.REST
@@ -333,6 +362,31 @@ var pathMap = Object.freeze((_Object$freeze2 = {}, _defineProperty(_defineProper
   rarity: RARITIES.RARE,
   leadsTo: PHASES.TRANSMUTE
 })));
+var enemyAbilityDataMap = _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({}, ENEMY_ABILITIES.INK_DRINK, {
+  value: 1,
+  description: "Reduces player's ink by 1 at combat start",
+  prefix: "Inkdrinking"
+}), ENEMY_ABILITIES.DOUBLE_HEALTH, {
+  value: 2,
+  description: "Doubles enemy HP",
+  prefix: "Tanky"
+}), ENEMY_ABILITIES.HAND_SIZE_REDUCTION, {
+  value: 2,
+  description: "Reduces player's hand size by 2 at combat start",
+  prefix: "Maddening"
+}), ENEMY_ABILITIES.ADD_ONE_PEBBLE, {
+  value: 1,
+  description: "Adds 1 Sisyphus' Pebble to your deck at combat start",
+  prefix: "Sisyphean"
+}), ENEMY_ABILITIES.ADD_TWO_MERCURY, {
+  value: 2,
+  description: "Adds 2 Mercury Droplets to your deck at combat start",
+  prefix: "Mercurial"
+}), ENEMY_ABILITIES.ADD_THREE_CLUTTER, {
+  value: 3,
+  description: "Adds 3 Clutter cards to your deck at combat start",
+  prefix: "Messy"
+});
 
 //#endregion data maps
 //#region data arrays of game objects
@@ -441,6 +495,44 @@ var cardList = [{
   rarity: RARITIES.MYTHIC,
   cost: 0,
   cardDraw: 1
+},
+// === Curses ===
+{
+  name: "Sisyphus' Pebble",
+  cardType: CARD_TYPES.CURSE,
+  unupgradable: true,
+  unsocketable: true,
+  specialSubtype: SPECIAL_CARD_SUBTYPES.CURSE,
+  cost: 0
+  // No effect; added to deck via events, not in loot pool
+}, {
+  name: "Clutter",
+  cardType: CARD_TYPES.CURSE,
+  unupgradable: true,
+  unsocketable: true,
+  specialSubtype: SPECIAL_CARD_SUBTYPES.CURSE,
+  cost: 0
+  // Added to combat deck by enemies; no effect
+}, {
+  name: "Mirage",
+  cardType: CARD_TYPES.CURSE,
+  unupgradable: true,
+  unsocketable: true,
+  specialSubtype: SPECIAL_CARD_SUBTYPES.CURSE,
+  cost: 0,
+  triggers: {
+    onDraw: {
+      exile: true // Exile when drawn
+    }
+  }
+}, {
+  name: "Mercury Droplet",
+  cardType: CARD_TYPES.INSTANT,
+  cost: 1,
+  unupgradable: true,
+  unsocketable: true,
+  specialSubtype: SPECIAL_CARD_SUBTYPES.CURSE
+  // You can define a specific effect if needed — right now it's just a harmful cost
 }];
 var gemList = [{
   name: "Amethyst",
@@ -574,6 +666,12 @@ var relicList = [{
   triggers: _defineProperty({}, TRIGGER_EVENTS.POPULATE_PATHS, {
     revealAnonymousPaths: true
   })
+}, {
+  name: "Gem of Weakness",
+  rarity: RARITIES.RARE,
+  triggers: _defineProperty({}, TRIGGER_EVENTS.COMBAT_START, {
+    weakenEnemyHpPercent: 0.1 // 10% reduction
+  })
 }];
 var potionList = [{
   name: "Lesser Healing Potion",
@@ -592,18 +690,11 @@ var potionList = [{
   rarity: RARITIES.MYTHIC,
   healthRestore: 50
 }];
-var enemyList = [{
-  name: "Lettuce Goblin",
-  level: 1,
-  difficulty: DIFFICULTIES.EASY,
-  health: 10,
-  goldRewardChance: 0.5,
-  gemRewardChance: 0.1,
-  potionRewardChance: 0.1,
-  relicRewardChance: 0.01
-}];
 //#endregion
 //#region utility functions
+function capitalize(word) {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
 function shuffle(array) {
   for (var i = array.length - 1; i > 0; i--) {
     var j = Math.floor(Math.random() * (i + 1));
@@ -630,11 +721,26 @@ function weightedRandomChoice(weightedMap) {
     if (r <= cumulative) return key;
   }
 }
-function screenChange(state, targetScreen) {
-  return _objectSpread(_objectSpread({}, state), {}, {
-    currentScreen: targetScreen,
-    log: ["Screen changed to ".concat(targetScreen, ".")].concat(_toConsumableArray(state.log))
+function changeScreen(dispatch, screen) {
+  dispatch({
+    type: ACTIONS.SCREEN_CHANGE,
+    payload: screen
   });
+}
+function inspectDeck(dispatch) {
+  changeScreen(dispatch, SCREENS.DECK);
+}
+function inspectCombatDeck(dispatch) {
+  changeScreen(dispatch, SCREENS.COMBAT_DECK);
+}
+function inspectGraveyard(dispatch) {
+  changeScreen(dispatch, SCREENS.GRAVEYARD);
+}
+function inspectExile(dispatch) {
+  changeScreen(dispatch, SCREENS.EXILE);
+}
+function returnToMain(dispatch) {
+  changeScreen(dispatch, SCREENS.MAIN);
 }
 function assignShopPrices(state) {
   var globalMultiplier = state.shopPriceMultiplier || 1;
@@ -761,6 +867,7 @@ function applyDifficultyModifiers(state) {
     restHealthRestore: (state.restHealthRestore || 0) + (modifiers.restHealthRestoreModifier || 0),
     maxHealth: state.maxHealth + modifiers.maxHealthModifier,
     health: state.health + modifiers.maxHealthModifier,
+    enemyHealthMultiplier: (state.enemyHealthMultiplier || 1) + (modifiers.enemyHealthMultiplierModifier || 0),
     log: ["Applied difficulty modifiers for ".concat(difficulty, ".")].concat(_toConsumableArray(state.log))
   });
 }
@@ -801,6 +908,8 @@ function handlePhaseTransitions(state) {
       return populateGemOfferings(state);
     case PHASES.SHOP:
       return populateShopfront(state);
+    case PHASES.COMBAT:
+      return initializeCombatPhase(state, state.currentPath);
     default:
       return state;
   }
@@ -821,10 +930,12 @@ function pickPath(state, index) {
   }
   return handlePhaseTransitions(_objectSpread(_objectSpread({}, state), {}, {
     level: ((_state$level = state.level) !== null && _state$level !== void 0 ? _state$level : 0) + 1,
+    currentPath: chosenPath,
+    // ✅ store the path here
     currentPhase: pathData.leadsTo,
     log: ["Chose path: ".concat(pathKey)].concat(_toConsumableArray(state.log)),
     offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
-      paths: [] // clear after pick
+      paths: []
     })
   }));
 }
@@ -921,7 +1032,7 @@ function populateGemOfferings(state) {
   });
 }
 function populatePathOfferings(state) {
-  var _state$campaign$deck;
+  var _state$campaign$deck, _state$campaign$deck2;
   var luck = state.luck || 0;
   var misery = state.misery || 0;
   var level = state.level || 0;
@@ -962,10 +1073,14 @@ function populatePathOfferings(state) {
 
   // === Step 2a: Exclude GEM_OFFERING if all cards are socketed ===
   var allCardsSocketed = ((_state$campaign$deck = state.campaign.deck) === null || _state$campaign$deck === void 0 ? void 0 : _state$campaign$deck.length) > 0 && state.campaign.deck.every(function (card) {
-    return card.gem != null;
+    return card.gem != null || card.unsocketable;
+  });
+  var allCardsUnupgradable = ((_state$campaign$deck2 = state.campaign.deck) === null || _state$campaign$deck2 === void 0 ? void 0 : _state$campaign$deck2.length) > 0 && state.campaign.deck.every(function (card) {
+    return card.unupgradable;
   });
   var filteredPaths = allPaths.filter(function (pathObj) {
     if (pathObj.path === PATHS.GEM_OFFERING && allCardsSocketed) return false;
+    if (pathObj.path === PATHS.ENCHANT_OFFERING && allCardsUnupgradable) return false;
     return true;
   });
 
@@ -1563,9 +1678,17 @@ function rest(state) {
   // Step 4: Advance phase
   newState = advancePhaseTo(newState, PHASES.PATH_SELECTION);
 
-  // ✅ Step 5: Populate offerings for the new phase
+  //Step 5: Populate offerings for the new phase
   newState = handlePhaseTransitions(newState);
   return newState;
+}
+function toggleDeckInspect(state, dispatch) {
+  var isInspectingDeck = state.currentScreen === SCREENS.DECK;
+  var returnTo = state.previousScreen || SCREENS.MAIN;
+  dispatch({
+    type: ACTIONS.SCREEN_CHANGE,
+    payload: isInspectingDeck ? returnTo : SCREENS.DECK
+  });
 }
 
 //#endregion
@@ -1574,10 +1697,13 @@ function createInitialState() {
   return {
     log: [],
     currentScreen: SCREENS.MAIN,
+    previousScreen: null,
     currentPhase: PHASES.MAIN_MENU,
+    currentPath: null,
     basicCardCount: 5,
     restHealthRestore: 10,
     shopPriceMultiplier: 1,
+    enemyHealthMultiplier: 1,
     difficulty: null,
     maxHealth: 0,
     health: 0,
@@ -1612,7 +1738,7 @@ function createInitialState() {
       pages: 0,
       bunnies: 0,
       maxPages: 0,
-      handSize: 5,
+      handSize: 0,
       enemy: null
     },
     offerings: {
@@ -1681,7 +1807,7 @@ function createCardInstance() {
     card = _objectSpread({}, found);
   } else if (rarity) {
     var candidates = cardList.filter(function (c) {
-      return c.rarity === rarity;
+      return c.rarity === rarity && !["curse", "unique", "status"].includes(c.specialSubtype);
     });
     if (candidates.length === 0) {
       console.error("No cards found with rarity: ".concat(rarity));
@@ -1874,8 +2000,10 @@ function upgradeCard(card) {
     console.error("Invalid card passed to upgradeCard:", card);
     return card;
   }
-
-  // Clone the card to avoid mutating the original
+  if (card.unupgradable) {
+    console.warn("Card ".concat(card.name, " is marked unupgradable."));
+    return card;
+  }
   var upgradedCard = _objectSpread({}, card);
   var upgradable = false;
   if ("bunnyAdd" in upgradedCard) {
@@ -1955,23 +2083,19 @@ function socketCardWithGem(card, gem) {
     console.error("Invalid card passed to socketCardWithGem:", card);
     return card;
   }
+  if (card.unsocketable) {
+    console.warn("Card ".concat(card.name, " is marked unsocketable."));
+    return card;
+  }
   if (!gem || _typeof(gem) !== "object" || !gem.name) {
     console.error("Invalid gem passed to socketCardWithGem:", gem);
     return card;
   }
-
-  // Clone the card to avoid mutation
   var socketedCard = _objectSpread({}, card);
-
-  // Apply gem effects
   if ("bunnyAdd" in gem) {
     socketedCard.bunnyAdd = (socketedCard.bunnyAdd || 0) + gem.bunnyAdd;
   }
-
-  // Save the gem reference
   socketedCard.gem = gem;
-
-  // Rename the card to include the gem name as a prefix
   socketedCard.name = "".concat(gem.name, " ").concat(card.name);
   return socketedCard;
 }
@@ -2091,16 +2215,7 @@ function checkRelicTriggers(state, triggerEvent) {
         if (effect.permanentlyUpgradeRandomCardsInDeck > 0) {
           var deck = updatedState.campaign.deck;
           var numToUpgrade = Math.min(effect.permanentlyUpgradeRandomCardsInDeck, deck.length);
-          var shuffled = _toConsumableArray(deck).sort(function () {
-            return Math.random() - 0.5;
-          });
-          var toUpgrade = shuffled.slice(0, numToUpgrade);
-          var upgraded = toUpgrade.map(function (card) {
-            return upgradeCard(card, 1);
-          });
-          var upgradedDeck = deck.map(function (card) {
-            return toUpgrade.includes(card) ? upgraded[toUpgrade.indexOf(card)] : card;
-          });
+          var upgradedDeck = permanentlyUpgradeRandomCardsInDeck(deck, numToUpgrade);
           updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
             campaign: _objectSpread(_objectSpread({}, updatedState.campaign), {}, {
               deck: upgradedDeck
@@ -2125,6 +2240,20 @@ function checkRelicTriggers(state, triggerEvent) {
           log: ["".concat(relic.name, " revealed a hidden path.")].concat(_toConsumableArray(state.log))
         });
       }
+
+      // === Handle COMBAT_START effects ===
+      if (triggerEvent === TRIGGER_EVENTS.COMBAT_START) {
+        var _updatedState$combat;
+        if (effect.weakenEnemyHpPercent && (_updatedState$combat = updatedState.combat) !== null && _updatedState$combat !== void 0 && _updatedState$combat.enemyHp) {
+          var reduction = Math.floor(updatedState.combat.enemyHp * effect.weakenEnemyHpPercent);
+          updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+            combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+              enemyHp: updatedState.combat.enemyHp - reduction
+            }),
+            log: ["".concat(relic.name, " weakened the enemy by ").concat(reduction, " HP at combat start.")].concat(_toConsumableArray(updatedState.log))
+          });
+        }
+      }
     };
     for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
       if (_loop4()) continue;
@@ -2136,6 +2265,93 @@ function checkRelicTriggers(state, triggerEvent) {
   }
   return _objectSpread(_objectSpread({}, updatedState), {}, {
     result: result
+  });
+}
+function checkEnemyTriggers(state, triggerEvent) {
+  var _updatedState$combat2;
+  var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+  var updatedState = _objectSpread({}, state);
+  var enemy = (_updatedState$combat2 = updatedState.combat) === null || _updatedState$combat2 === void 0 ? void 0 : _updatedState$combat2.enemy;
+  if (!enemy) return updatedState;
+  var abilities = enemy.abilities || {};
+  var logMessages = [];
+  if (triggerEvent === TRIGGER_EVENTS.COMBAT_START) {
+    // Ink Drink effect
+    if (abilities[ENEMY_ABILITIES.INK_DRINK]) {
+      var amount = abilities[ENEMY_ABILITIES.INK_DRINK];
+      updatedState = modifyCombatInk(updatedState, -amount);
+      logMessages.push("".concat(enemy.name, " drained ").concat(amount, " ink at the start of combat!"));
+    }
+
+    // Double Health effect
+    if (abilities[ENEMY_ABILITIES.DOUBLE_HEALTH]) {
+      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          enemyHp: updatedState.combat.enemyHp * 2,
+          enemy: _objectSpread(_objectSpread({}, updatedState.combat.enemy), {}, {
+            hp: updatedState.combat.enemy.hp * 2
+          })
+        })
+      });
+      logMessages.push("".concat(enemy.name, " doubles its health!"));
+    }
+
+    // Hand Size Reduction
+    if (abilities[ENEMY_ABILITIES.HAND_SIZE_REDUCTION]) {
+      var _amount = abilities[ENEMY_ABILITIES.HAND_SIZE_REDUCTION];
+      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          handSize: Math.max(1, updatedState.combat.handSize - _amount)
+        })
+      });
+      logMessages.push("".concat(enemy.name, " reduces your hand size by ").concat(_amount, "!"));
+    }
+
+    // === Add curses at combat start ===
+    if (triggerEvent === TRIGGER_EVENTS.COMBAT_START) {
+      var _abilities = enemy.abilities || {};
+      if (_abilities[ENEMY_ABILITIES.ADD_ONE_PEBBLE]) {
+        var _amount2 = _abilities[ENEMY_ABILITIES.ADD_ONE_PEBBLE];
+        for (var i = 0; i < _amount2; i++) {
+          updatedState = addCardToCombatDeck(updatedState, "Sisyphus' Pebble");
+        }
+        logMessages.push("".concat(enemy.name, " added ").concat(_amount2, " Sisyphus' Pebble to your deck!"));
+      }
+      if (_abilities[ENEMY_ABILITIES.ADD_TWO_MERCURY]) {
+        var _amount3 = _abilities[ENEMY_ABILITIES.ADD_TWO_MERCURY];
+        for (var _i5 = 0; _i5 < _amount3; _i5++) {
+          updatedState = addCardToCombatDeck(updatedState, "Mercury Droplet");
+        }
+        logMessages.push("".concat(enemy.name, " added ").concat(_amount3, " Mercury Droplet(s) to your deck!"));
+      }
+      if (_abilities[ENEMY_ABILITIES.ADD_THREE_CLUTTER]) {
+        var _amount4 = _abilities[ENEMY_ABILITIES.ADD_THREE_CLUTTER];
+        for (var _i6 = 0; _i6 < _amount4; _i6++) {
+          updatedState = addCardToCombatDeck(updatedState, "Clutter");
+        }
+        logMessages.push("".concat(enemy.name, " added ").concat(_amount4, " Clutter card(s) to your deck!"));
+      }
+    }
+  }
+  if (logMessages.length > 0) {
+    updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+      log: ["\u26A0\uFE0F Enemy ability activated!"].concat(logMessages, _toConsumableArray(updatedState.log))
+    });
+  }
+  return updatedState;
+}
+function modifyCombatInk(state, amount) {
+  var _state$combat$ink, _state$combat, _state$combat$maxInk, _state$combat2;
+  var current = (_state$combat$ink = (_state$combat = state.combat) === null || _state$combat === void 0 ? void 0 : _state$combat.ink) !== null && _state$combat$ink !== void 0 ? _state$combat$ink : 0;
+  var max = (_state$combat$maxInk = (_state$combat2 = state.combat) === null || _state$combat2 === void 0 ? void 0 : _state$combat2.maxInk) !== null && _state$combat$maxInk !== void 0 ? _state$combat$maxInk : 0;
+  var newInk = Math.max(0, Math.min(current + amount, max));
+  var actualChange = newInk - current;
+  var changeMessage = actualChange === 0 ? "Ink unchanged." : actualChange > 0 ? "Gained ".concat(actualChange, " ink.") : "Lost ".concat(Math.abs(actualChange), " ink.");
+  return _objectSpread(_objectSpread({}, state), {}, {
+    combat: _objectSpread(_objectSpread({}, state.combat), {}, {
+      ink: newInk
+    }),
+    log: [changeMessage].concat(_toConsumableArray(state.log))
   });
 }
 function heal(state, amount) {
@@ -2180,6 +2396,273 @@ function purgeCard(state, card) {
     log: ["Purged card: ".concat(card.name)].concat(_toConsumableArray(state.log))
   });
 }
+function initializeCombatPhase(state, path) {
+  var _state$baseBunnies;
+  var enemy = generateEnemy(state, path); // assumes generateEnemy returns { name, hp, etc. }
+
+  var newCombat = {
+    enemy: enemy,
+    enemyHp: enemy.hp,
+    deck: JSON.parse(JSON.stringify(state.campaign.deck)),
+    // deep copy
+    hand: [],
+    discard: [],
+    exile: [],
+    ink: state.ink,
+    maxInk: state.ink,
+    books: state.books,
+    maxBooks: state.books,
+    pages: state.pages,
+    maxPages: state.pages,
+    handSize: state.handSize,
+    baseBunnies: (_state$baseBunnies = state.baseBunnies) !== null && _state$baseBunnies !== void 0 ? _state$baseBunnies : 0
+  };
+  var newState = _objectSpread(_objectSpread({}, state), {}, {
+    combat: newCombat,
+    log: ["\u2694\uFE0F Combat begins against ".concat(enemy.name, "!")].concat(_toConsumableArray(state.log))
+  });
+  newState = checkRelicTriggers(newState, TRIGGER_EVENTS.COMBAT_START);
+  newState = checkEnemyTriggers(newState, TRIGGER_EVENTS.COMBAT_START);
+  return newState;
+}
+function generateEnemy(state, path) {
+  var _pathMap$path$path, _state$level2, _state$enemyHealthMul, _baseHealthMap$diffic, _perLevelIncrement$di;
+  var difficulty = (_pathMap$path$path = pathMap[path === null || path === void 0 ? void 0 : path.path]) === null || _pathMap$path$path === void 0 ? void 0 : _pathMap$path$path.difficulty;
+  console.log("Path:", path === null || path === void 0 ? void 0 : path.path, "| Difficulty:", difficulty);
+  var level = (_state$level2 = state.level) !== null && _state$level2 !== void 0 ? _state$level2 : 1;
+  var multiplier = (_state$enemyHealthMul = state.enemyHealthMultiplier) !== null && _state$enemyHealthMul !== void 0 ? _state$enemyHealthMul : 1;
+  var isBoss = difficulty === "boss";
+
+  // === Health Calculation ===
+  var baseHealthMap = {
+    easy: 10,
+    medium: 15,
+    hard: 20,
+    boss: 30
+  };
+  var perLevelIncrement = {
+    easy: 3,
+    medium: 4,
+    hard: 5,
+    boss: 10
+  };
+  var base = (_baseHealthMap$diffic = baseHealthMap[difficulty]) !== null && _baseHealthMap$diffic !== void 0 ? _baseHealthMap$diffic : 10;
+  var increment = (_perLevelIncrement$di = perLevelIncrement[difficulty]) !== null && _perLevelIncrement$di !== void 0 ? _perLevelIncrement$di : 3;
+  var health = (base + level * increment) * multiplier;
+
+  // === Ability Assignment ===
+  var allAbilities = Object.keys(enemyAbilityDataMap);
+  var selectedAbilities = new Set();
+  var numAbilities = 0;
+  if (difficulty === "hard") numAbilities = 1;
+  if (isBoss) numAbilities = 2;
+  if (state.difficulty === DIFFICULTIES.HARD) {
+    var _state$luck;
+    var bonusChance = Math.max(0, 0.5 - ((_state$luck = state.luck) !== null && _state$luck !== void 0 ? _state$luck : 0));
+    if (Math.random() < bonusChance) numAbilities += 1;
+  }
+  numAbilities = Math.min(numAbilities, 3);
+  while (selectedAbilities.size < numAbilities) {
+    var ability = allAbilities[Math.floor(Math.random() * allAbilities.length)];
+    selectedAbilities.add(ability);
+  }
+
+  // === Build abilities object ===
+  var abilities = {};
+  var _iterator4 = _createForOfIteratorHelper(selectedAbilities),
+    _step4;
+  try {
+    for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
+      var key = _step4.value;
+      abilities[key] = enemyAbilityDataMap[key].value;
+    }
+
+    // === Name Generation ===
+  } catch (err) {
+    _iterator4.e(err);
+  } finally {
+    _iterator4.f();
+  }
+  var name;
+  var smallMonsters = ["goblin", "kobold", "rat", "spider", "imp", "gremlin", "bat", "quasit", "skeleton", "zombie"];
+  var mediumMonsters = ["orc", "ogre", "gnoll", "troll", "hobgoblin", "ghoul", "harpy", "lizardfolk", "wight", "mimic"];
+  var largeMonsters = ["dragon", "manticore", "hydra", "wyvern", "beholder", "medusa", "chimera", "giant", "basilisk", "banshee"];
+  var vegetables = ["carrot", "broccoli", "spinach", "kale", "zucchini", "eggplant", "cauliflower", "cabbage", "lettuce", "beet", "radish", "turnip", "bokchoi", "chilli", "nopal", "durian", "bean", "yam", "tomato", "asparagus", "potato", "pumpkin", "bellpepper", "celery", "onion"];
+  var bossNames = ["Avatar of the Weasel", "Fox Spirit", "Beaglesoul"];
+  if (isBoss) {
+    name = bossNames[Math.floor(Math.random() * bossNames.length)];
+  } else {
+    // Base monster type
+    var monsterList;
+    if (level < 15) {
+      monsterList = smallMonsters;
+    } else if (level < 30) {
+      monsterList = mediumMonsters;
+    } else {
+      monsterList = largeMonsters;
+    }
+    var vegetable = vegetables[Math.floor(Math.random() * vegetables.length)];
+    var monster = monsterList[Math.floor(Math.random() * monsterList.length)];
+
+    // Prefixes based on abilities
+    var prefixes = Object.keys(abilities).map(function (ability) {
+      var _enemyAbilityDataMap$;
+      return (_enemyAbilityDataMap$ = enemyAbilityDataMap[ability]) === null || _enemyAbilityDataMap$ === void 0 ? void 0 : _enemyAbilityDataMap$.prefix;
+    }).filter(Boolean);
+    name = [].concat(_toConsumableArray(prefixes), [capitalize(vegetable), capitalize(monster)]).join(" ");
+  }
+
+  // === Loot Generation ===
+  var loot = generateEnemyLoot(state, difficulty, numAbilities, isBoss);
+  return {
+    name: name,
+    hp: Math.round(health),
+    abilities: abilities,
+    loot: loot
+  };
+}
+function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
+  var _state$luck2, _state$level3, _state$campaign$deck3, _state$campaign;
+  var luck = (_state$luck2 = state.luck) !== null && _state$luck2 !== void 0 ? _state$luck2 : 0;
+  var level = (_state$level3 = state.level) !== null && _state$level3 !== void 0 ? _state$level3 : 1;
+  var deck = (_state$campaign$deck3 = (_state$campaign = state.campaign) === null || _state$campaign === void 0 ? void 0 : _state$campaign.deck) !== null && _state$campaign$deck3 !== void 0 ? _state$campaign$deck3 : [];
+  var allGemmedOrUnsocketable = deck.length > 0 && deck.every(function (card) {
+    return card.gem || card.unsocketable;
+  });
+  var weights = {
+    gold: 30,
+    potion: 30,
+    card: 60,
+    relic: 1 + luck + numAbilities * 2,
+    gem: allGemmedOrUnsocketable ? 0 : 5 + luck + numAbilities * 2
+  };
+  var drops = isBoss ? 3 : 1;
+  if (!isBoss) {
+    var chanceTwo = 40 + luck + numAbilities * 10;
+    if (Math.random() * 100 < chanceTwo) {
+      drops++;
+      var chanceThree = 15 + luck + numAbilities * 7;
+      if (Math.random() * 100 < chanceThree) {
+        drops++;
+      }
+    }
+  }
+  var usedTypes = new Set();
+  var loot = [];
+  if (isBoss) {
+    loot.push({
+      type: "relic",
+      value: generateRandomRelic(state)
+    });
+    usedTypes.add("relic");
+    drops--;
+  }
+  while (loot.length < drops) {
+    var available = Object.entries(weights).filter(function (_ref13) {
+      var _ref14 = _slicedToArray(_ref13, 2),
+        type = _ref14[0],
+        weight = _ref14[1];
+      return weight > 0 && !usedTypes.has(type);
+    });
+    if (available.length === 0) break;
+    var totalWeight = available.reduce(function (sum, _ref15) {
+      var _ref16 = _slicedToArray(_ref15, 2),
+        _ = _ref16[0],
+        w = _ref16[1];
+      return sum + w;
+    }, 0);
+    var roll = Math.random() * totalWeight;
+    var selected = void 0;
+    var _iterator5 = _createForOfIteratorHelper(available),
+      _step5;
+    try {
+      for (_iterator5.s(); !(_step5 = _iterator5.n()).done;) {
+        var _step5$value = _slicedToArray(_step5.value, 2),
+          type = _step5$value[0],
+          weight = _step5$value[1];
+        if (roll < weight) {
+          selected = type;
+          break;
+        }
+        roll -= weight;
+      }
+    } catch (err) {
+      _iterator5.e(err);
+    } finally {
+      _iterator5.f();
+    }
+    usedTypes.add(selected);
+    if (selected === "gold") {
+      var _easy$medium$hard$dif;
+      var base = (_easy$medium$hard$dif = {
+        easy: 2,
+        medium: 4,
+        hard: 6
+      }[difficulty]) !== null && _easy$medium$hard$dif !== void 0 ? _easy$medium$hard$dif : 2;
+      var amount = (base + level + luck + numAbilities * 2) * (0.5 + Math.random());
+      loot.push({
+        type: "gold",
+        value: Math.max(1, Math.round(amount))
+      });
+    } else if (selected === "card") {
+      loot.push({
+        type: "card",
+        value: generateRandomCard(state)
+      });
+    } else if (selected === "potion") {
+      loot.push({
+        type: "potion",
+        value: generateRandomPotion(state)
+      });
+    } else if (selected === "relic") {
+      loot.push({
+        type: "relic",
+        value: generateRandomRelic(state)
+      });
+    } else if (selected === "gem") {
+      loot.push({
+        type: "gem",
+        value: generateRandomGem(state)
+      });
+    }
+  }
+  return loot;
+}
+function permanentlyUpgradeRandomCardsInDeck(deck) {
+  var numUpgrades = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 1;
+  var upgradableCards = deck.filter(function (card) {
+    return !card.unupgradable;
+  });
+  var shuffled = _toConsumableArray(upgradableCards).sort(function () {
+    return Math.random() - 0.5;
+  });
+  var toUpgrade = shuffled.slice(0, numUpgrades);
+  var upgradedCards = toUpgrade.map(function (card) {
+    return upgradeCard(card, 1);
+  });
+  return deck.map(function (card) {
+    var index = toUpgrade.indexOf(card);
+    return index !== -1 ? upgradedCards[index] : card;
+  });
+}
+function addCardToCombatDeck(state, cardName) {
+  var _state$combat3;
+  var base = cardList.find(function (c) {
+    return c.name === cardName;
+  });
+  if (!base) {
+    console.warn("Could not find card \"".concat(cardName, "\""));
+    return state;
+  }
+  var newCard = createCardInstance(cardName);
+  var combatDeck = Array.isArray((_state$combat3 = state.combat) === null || _state$combat3 === void 0 ? void 0 : _state$combat3.deck) ? state.combat.deck : [];
+  return _objectSpread(_objectSpread({}, state), {}, {
+    combat: _objectSpread(_objectSpread({}, state.combat), {}, {
+      deck: [].concat(_toConsumableArray(combatDeck), [newCard])
+    })
+  });
+}
+
 //#endregion
 //#region game reducer
 function gameReducer(state, action) {
@@ -2254,7 +2737,10 @@ function gameReducer(state, action) {
     // payload = selected card
 
     case ACTIONS.SCREEN_CHANGE:
-      return screenChange(state, action.payload);
+      return _objectSpread(_objectSpread({}, state), {}, {
+        previousScreen: state.currentScreen,
+        currentScreen: action.payload
+      });
     case ACTIONS.POPULATE_SHOPFRONT:
       return populateShopfront(state);
     case ACTIONS.INCREASE_BASE_BUNNIES:
@@ -2279,7 +2765,7 @@ function gameReducer(state, action) {
 //#endregion
 //#region render function
 function render(state, dispatch) {
-  var _state$level2, _state$modData3;
+  var _state$level4, _state$modData3;
   // Get or create output div
   var output = document.getElementById("output");
   if (!output) {
@@ -2288,6 +2774,19 @@ function render(state, dispatch) {
     document.body.appendChild(output);
   }
   output.innerHTML = ""; // Clear previous contents
+
+  function renderCardList(title, cards) {
+    var section = document.createElement("div");
+    section.innerHTML = "<h3>".concat(title, "</h3>");
+    var ul = document.createElement("ul");
+    cards.forEach(function (card) {
+      var li = document.createElement("li");
+      li.textContent = card.name;
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    output.appendChild(section);
+  }
 
   // render utility function
   function renderModPhaseEntry(phase, label, modKey) {
@@ -2312,10 +2811,140 @@ function render(state, dispatch) {
 
   // === Game Info ===
   var info = document.createElement("div");
-  info.innerHTML = "\n  <h2>Game Info</h2>\n  <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n  <p><strong>Phase:</strong> ").concat(state.currentPhase, " &nbsp;&nbsp; <strong>Level:</strong> ").concat((_state$level2 = state.level) !== null && _state$level2 !== void 0 ? _state$level2 : 0, "</p>\n  <p><strong>Gold:</strong> ").concat(state.gold, "</p>\n  <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n  <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n  <p><strong>Relics:</strong> ").concat(state.relicBelt.map(function (r) {
+  info.innerHTML = "\n  <h2>Game Info</h2>\n  <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n  <p><strong>Phase:</strong> ").concat(state.currentPhase, " &nbsp;&nbsp; <strong>Level:</strong> ").concat((_state$level4 = state.level) !== null && _state$level4 !== void 0 ? _state$level4 : 0, "</p>\n  <p><strong>Gold:</strong> ").concat(state.gold, "</p>\n  <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n  <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n  <p><strong>Relics:</strong> ").concat(state.relicBelt.map(function (r) {
     return r.name;
   }).join(", ") || "None", "</p>\n");
   output.appendChild(info);
+
+  // === Combat Display ===
+  var isCombatInspectScreen = [SCREENS.COMBAT_DECK, SCREENS.GRAVEYARD, SCREENS.EXILE].includes(state.currentScreen);
+  if (state.currentPhase === PHASES.COMBAT && state.combat) {
+    var combatSection = document.createElement("div");
+    combatSection.style.border = "2px solid black";
+    combatSection.style.padding = "1rem";
+    combatSection.style.margin = "1rem 0";
+    combatSection.innerHTML = "<h3>Combat</h3>";
+
+    // === Main Combat UI (skip if inspecting)
+    if (!isCombatInspectScreen) {
+      // Enemy Name + HP (on same line)
+      var enemyBox = document.createElement("div");
+      enemyBox.style.display = "flex";
+      enemyBox.style.justifyContent = "space-between";
+      enemyBox.style.alignItems = "center";
+      enemyBox.style.fontSize = "1.5rem";
+      enemyBox.style.fontWeight = "bold";
+      enemyBox.style.border = "1px solid red";
+      enemyBox.style.padding = "1rem";
+      enemyBox.style.marginBottom = "1rem";
+
+      // Enemy name
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = state.combat.enemy.name;
+
+      // Enemy HP
+      var hpSpan = document.createElement("span");
+      hpSpan.textContent = "HP: ".concat(state.combat.enemyHp);
+      enemyBox.appendChild(nameSpan);
+      enemyBox.appendChild(hpSpan);
+      combatSection.appendChild(enemyBox);
+
+      // Spellbook Pages
+      var spellbook = document.createElement("div");
+      spellbook.style.display = "flex";
+      spellbook.style.gap = "0.5rem";
+      spellbook.style.marginBottom = "1rem";
+      for (var i = 0; i < state.combat.pages; i++) {
+        var page = document.createElement("div");
+        page.style.width = "30px";
+        page.style.height = "30px";
+        page.style.backgroundColor = "grey";
+        spellbook.appendChild(page);
+      }
+      combatSection.appendChild(spellbook);
+
+      // Cast + Bunny Count
+      var castRow = document.createElement("div");
+      castRow.style.display = "flex";
+      castRow.style.alignItems = "center";
+      castRow.style.gap = "1rem";
+      castRow.style.marginBottom = "1rem";
+      var castButton = document.createElement("button");
+      castButton.textContent = "Cast Spellbook";
+      castButton.onclick = function () {
+        return castSpellbook(state, dispatch);
+      };
+      var bunnyDisplay = document.createElement("span");
+      bunnyDisplay.textContent = "BUNNIES: ".concat(state.bunnies || 0);
+      castRow.appendChild(castButton);
+      castRow.appendChild(bunnyDisplay);
+      combatSection.appendChild(castRow);
+
+      // Hand
+      var handRow = document.createElement("div");
+      handRow.style.display = "flex";
+      handRow.style.gap = "0.5rem";
+      handRow.style.flexWrap = "wrap";
+      if (state.hand && state.hand.length > 0) {
+        state.hand.forEach(function (card, index) {
+          var cardBtn = document.createElement("button");
+          cardBtn.textContent = card.name;
+          cardBtn.onclick = function () {
+            return playCard(state, index, dispatch);
+          };
+          handRow.appendChild(cardBtn);
+        });
+      } else {
+        var empty = document.createElement("p");
+        empty.textContent = "Your hand is empty.";
+        handRow.appendChild(empty);
+      }
+      combatSection.appendChild(handRow);
+    }
+
+    // === Inspect Buttons (always shown in combat)
+    var inspectRow = document.createElement("div");
+    inspectRow.style.marginTop = "1rem";
+    inspectRow.style.display = "flex";
+    inspectRow.style.gap = "0.5rem";
+    [{
+      label: "Combat Deck",
+      screen: SCREENS.COMBAT_DECK
+    }, {
+      label: "Graveyard",
+      screen: SCREENS.GRAVEYARD
+    }, {
+      label: "Exile",
+      screen: SCREENS.EXILE
+    }].forEach(function (_ref17) {
+      var label = _ref17.label,
+        screen = _ref17.screen;
+      var btn = document.createElement("button");
+      btn.textContent = state.currentScreen === screen ? "Return" : "Inspect ".concat(label);
+      btn.onclick = function () {
+        if (state.currentScreen === screen) {
+          returnToMain(dispatch);
+        } else {
+          changeScreen(dispatch, screen);
+        }
+      };
+      inspectRow.appendChild(btn);
+    });
+    combatSection.appendChild(inspectRow);
+    output.appendChild(combatSection);
+  }
+  if (state.currentScreen === SCREENS.COMBAT_DECK) {
+    var _state$combat4;
+    renderCardList("Combat Deck", ((_state$combat4 = state.combat) === null || _state$combat4 === void 0 ? void 0 : _state$combat4.deck) || []);
+  }
+  if (state.currentScreen === SCREENS.GRAVEYARD) {
+    var _state$combat5;
+    renderCardList("Graveyard", ((_state$combat5 = state.combat) === null || _state$combat5 === void 0 ? void 0 : _state$combat5.graveyard) || []);
+  }
+  if (state.currentScreen === SCREENS.EXILE) {
+    var _state$combat6;
+    renderCardList("Exile", ((_state$combat6 = state.combat) === null || _state$combat6 === void 0 ? void 0 : _state$combat6.exile) || []);
+  }
 
   // === Log ===
   var log = document.createElement("div");
@@ -2530,8 +3159,9 @@ function render(state, dispatch) {
     var mod = state.modData.mod;
     var isGemMod = !!mod.gem;
     state.campaign.deck.forEach(function (card) {
-      // If it's a gem mod, skip cards that already have a gem
-      if (isGemMod && card.gem) return;
+      // === Filter based on mod type ===
+      if (isGemMod && (card.gem || card.unsocketable)) return;
+      if (mod.upgrade && card.unupgradable) return;
       var btn = document.createElement("button");
       btn.textContent = "".concat(card.name, " (Cost: ").concat(card.cost, ")") + (card.upgrades ? " +".concat(card.upgrades) : "") + (card.gem ? " [Gem: ".concat(card.gem.name, "]") : "");
       btn.onclick = function () {
@@ -2588,6 +3218,7 @@ function render(state, dispatch) {
     output.appendChild(restBtn);
     output.appendChild(practiceBtn);
   }
+
   // === Deck Inspect / Return Button ===
   //deck inspect button
   if ((state.currentScreen === SCREENS.MAIN || state.currentScreen === SCREENS.DECK) && state.campaign.deck.length > 0) {
@@ -2617,8 +3248,6 @@ function render(state, dispatch) {
   }
 
   // === Always-Visible Potion Belt ===
-
-  // === Always-Visible Potion Belt ===
   if (state.potionBelt && state.potionBelt.length > 0) {
     var beltSection = document.createElement("div");
     beltSection.innerHTML = "<h3>Your Potions</h3>";
@@ -2643,56 +3272,35 @@ window.onload = function () {
   createGameApp(createInitialState(), gameReducer, render);
 };
 
+//hotkeys
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") {
+    dispatch({
+      type: ACTIONS.SCREEN_CHANGE,
+      payload: SCREENS.MAIN
+    });
+  }
+});
+
 //#region WIP
 // //------------------------------------------------WIP functions for MVP ------------------------------------------------
 
-// //@@@@@@@@@@@@ combat functions @@@@@@@@@@@@
-
-// edits needed to render function:
-// should display the enemy HP in a big square box in big font, the spellbook (effectively a row of grey squares, with one square per state.combat.pages), a "cast spellbook" button and a "BUNNIES:" display that can show numnbers on the same row, and the player's hand (a row of cards)(in that order).
-
-// function initializeCombatPhase(state, path) {
-// this function handles the start of combat. It should be called in the phase transition handler, when the the player selects one of the four combat paths (easy, medium, hard, or boss).
-// the function will generate an enemy by calling the generateenemy funciton.
-// then, it will prepare the combat deck. This is a deep, exact copy of the campaign deck.
-// next, it will set the combat state, copying all corresponding values over from the campaign state and rest of state.
-
-// specifically, the campaign values of:
-// (campaign)   ink: 3, =====>  (combat) ink: 0, maxInk: 0,
-// books: 1, =====>  books: 0, maxBooks: 0,
-// pages: 3, ====>   pages: 0,maxPages: 0,
-// handSize: 5, ====> handSize: 5,
-// also, the state.baseBunnies vlaue gets copied over to combat.baseBunnies.
-
-//
-
-// finally, it will check for any combat start triggers.
-//}
-
-// function generateEnemy(state, path) {
-//   // generates an enemy based on the path's difficulty and game level.
-// first checks the path
-//  // enemies are objects with these properties: name, health, loot.
-//  names are created by combining one word from each of these two lists:
-var vegetables = ["carrot", "broccoli", "spinach", "kale", "zucchini", "eggplant", "cauliflower", "cabbage", "lettuce", "beet", "radish", "turnip", "peas", "green bean", "asparagus", "sweet potato", "pumpkin", "bell pepper", "celery", "onion"];
-// and
-
-//   // assigns the enemy to state.combat.enemy based on the path name and game level.
-// }
-
-// function newBook(state) {
-//   //effectively a new 'turn'
-//   // populaets a new spellbook, with the appropriate number of blank pages.
-//   // calls 'newHand' to draw a new hand of cards.
+// function startTurn(state)  {
+//   // opens a new empty book, with the combat.pages blank pages.
+//   // combat.books = combat.books -1.
+//   // calls 'newHand' function to draw a new hand of cards.
 //   // calls 'refillInkpot' to refresh the player's ink.
 // }
 
 // function newHand(state) {
-//   // draws a hand of cards based on the player's hand size.
+//   // draws a hand of cards based on the player's combat.handSize.
+// checks drawHand triggers
+// calls drawCard once for each card in the hand size.
 // }
 
 // function drawCard(state) {
 //   // draws a card from the player's deck into their hand.
+//  checks drawCard triggers.
 // }
 
 // function checkDrawCardTriggers(state, card) {
@@ -2822,7 +3430,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "63233" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "52097" + '/');
   ws.onmessage = function (event) {
     checkedAssets = {};
     assetsToAccept = [];
