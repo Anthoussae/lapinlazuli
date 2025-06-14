@@ -186,8 +186,7 @@ var TRIGGER_EVENTS = Object.freeze({
   PLAY_CARD: "PLAY_CARD",
   CAST_SPELLBOOK: "CAST_SPELLBOOK",
   COMBAT_END: "COMBAT_END",
-  DEAL_DAMAGE: "DEAL_DAMAGE",
-  INCREASE_DICE_SIDES: "INCREASE_DICE_SIDES"
+  DEAL_DAMAGE: "DEAL_DAMAGE"
 });
 var PATHS = Object.freeze({
   EASY_FIGHT: "Easy Fight",
@@ -367,7 +366,7 @@ var pathMap = Object.freeze((_Object$freeze3 = {}, _defineProperty(_defineProper
   rarity: RARITIES.MYTHIC,
   leadsTo: PHASES.HOARD
 }), PATHS.PURGE, {
-  rarity: RARITIES.RARE,
+  rarity: RARITIES.UNCOMMON,
   leadsTo: PHASES.PURGE
 }), PATHS.TRANSMUTE, {
   rarity: RARITIES.RARE,
@@ -434,13 +433,15 @@ var cardList = [{
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.COMMON,
   inkCost: 1,
-  cardDraw: 3
+  cardDraw: 3,
+  exileOnCast: true
 }, {
   name: "Inkswell",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.UNCOMMON,
   inkCost: 1,
-  inkAdd: 2
+  inkAdd: 2,
+  exileOnCast: true
 }, {
   name: "Cloudfluff Conjuration",
   cardType: CARD_TYPES.SPELL,
@@ -513,37 +514,41 @@ var cardList = [{
   name: "Magic Missile",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.COMMON,
-  inkCost: 1,
+  inkCost: 0,
   damage: 5,
-  damageType: DAMAGE_TYPES.FIRE
+  inkCostIncreasePerLevel: 1,
+  damageMultiplierPerLevel: 2,
+  damageTypes: [DAMAGE_TYPES.FIRE]
 }, {
   name: "Fireball",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.UNCOMMON,
   inkCost: 3,
-  damage: 30,
-  damageType: DAMAGE_TYPES.FIRE
+  damage: 25,
+  inkCostIncreasePerLevel: 1,
+  damageMultiplierPerLevel: 2,
+  damageTypes: [DAMAGE_TYPES.FIRE]
 }, {
   name: "Lightning Bolt 1d4",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.COMMON,
   inkCost: 1,
-  addDiceSidesOnCast: 1,
+  upgradesOnCast: 1,
+  damageTypes: [DAMAGE_TYPES.LIGHTNING],
   damageRoll: {
-    type: DAMAGE_TYPES.LIGHTNING,
     dice: 1,
     sides: 4,
     flatBonus: 0
   }
 }, {
-  name: "Thunderstrike 3d2",
+  name: "Thunderstrike 2d2",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.UNCOMMON,
   inkCost: 2,
-  addDiceSidesOnCast: 2,
+  upgradesOnCast: 2,
+  damageTypes: [DAMAGE_TYPES.LIGHTNING],
   damageRoll: {
-    type: DAMAGE_TYPES.LIGHTNING,
-    dice: 3,
+    dice: 2,
     sides: 2,
     flatBonus: 0
   }
@@ -610,19 +615,21 @@ var gemList = [{
   permanentlyUpgradeRandomCardsInDeck: 1
 }, {
   name: "Ruby",
-  rarity: RARITIES.UNCOMMON,
+  rarity: RARITIES.RARE,
   damage: 5,
-  damageType: DAMAGE_TYPES.FIRE
+  damageTypes: [DAMAGE_TYPES.FIRE],
+  inkCostIncreasePerLevel: 1,
+  damageMultiplierPerLevel: 2
 }, {
   name: "Amber",
   rarity: RARITIES.RARE,
   damageRoll: {
-    type: DAMAGE_TYPES.LIGHTNING,
     dice: 1,
     sides: 4,
     flatBonus: 0
   },
-  addDiceSidesOnCast: 1
+  upgradesOnCast: 1,
+  damageTypes: [DAMAGE_TYPES.LIGHTNING]
 }];
 var relicList = [{
   name: "Magic Scroll",
@@ -789,14 +796,14 @@ var relicList = [{
   description: "Doubles all Bunny damage you deal.",
   triggers: _defineProperty({}, TRIGGER_EVENTS.DEAL_DAMAGE, {
     damageTypeTrigger: DAMAGE_TYPES.BUNNY,
-    multiplyDamage: 2
+    multiplyDamage: 1.5
   })
 }, {
   name: "Lightning Rod",
   rarity: RARITIES.MYTHIC,
-  description: "Whenever you increase a spell’s dice sides, add 2 extra sides.",
-  triggers: _defineProperty({}, TRIGGER_EVENTS.INCREASE_DICE_SIDES, {
-    bonusSides: 2
+  description: "Whenever you cast a Lightning spell, draw 2 cards.",
+  triggers: _defineProperty({}, TRIGGER_EVENTS.PLAY_CARD, {
+    ifLightningDrawCards: 2
   })
 }, {
   name: "Firemage's Hat",
@@ -806,6 +813,13 @@ var relicList = [{
     reduceInkCostOfFireCardsInDeck: 1
   }), TRIGGER_EVENTS.CARD_PICKUP, {
     reduceInkCostIfFire: 1
+  })
+}, {
+  name: "Thinking Cap",
+  rarity: RARITIES.MYTHIC,
+  description: "Your hand size is permanently increased by 3.",
+  triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
+    bonusHandSize: 3
   })
 }];
 var potionList = [{
@@ -2335,26 +2349,31 @@ function upgradeCard(card) {
   if (upgradedCard.damageRoll) {
     upgradedCard.damageRoll = _objectSpread(_objectSpread({}, upgradedCard.damageRoll), {}, {
       dice: upgradedCard.damageRoll.dice + level,
+      sides: upgradedCard.damageRoll.sides + level,
       flatBonus: upgradedCard.damageRoll.flatBonus + level
     });
     upgradable = true;
   }
 
-  // === Upgrade fire-type flat damage (by doubling) ===
-  if ("damage" in upgradedCard && typeof upgradedCard.damage === "number" && upgradedCard.damageType === DAMAGE_TYPES.FIRE && !upgradedCard.damageRoll) {
-    upgradedCard.damage *= Math.pow(2, level);
+  // === Increase inkCost by per-level amount ===
+  if ("inkCostIncreasePerLevel" in upgradedCard && typeof upgradedCard.inkCost === "number") {
+    upgradedCard.inkCost += upgradedCard.inkCostIncreasePerLevel * level;
     upgradable = true;
   }
-  if (!upgradable) {
-    console.error("Card cannot be upgraded: ".concat(card.name));
-    return card;
+
+  // === Multiply base damage by per-level multiplier ===
+  if ("damageMultiplierPerLevel" in upgradedCard && typeof upgradedCard.damage === "number") {
+    upgradedCard.damage *= Math.pow(upgradedCard.damageMultiplierPerLevel, level);
+    upgradable = true;
   }
 
   // Add or increment the upgrade level
   upgradedCard.upgrades = (upgradedCard.upgrades || 0) + level;
 
   // === Smart renaming ===
-  var baseName = card.name.replace(/\s\+\d+$/, "").replace(/\s\d+d\d+(\+\d+)?$/, "");
+  var baseName = card.name.replace(/\s\+\d+$/, "") // remove trailing "+3"
+  .replace(/\s\d+d\d+(\s?\+\d+)?$/, ""); // remove "3d6" or "3d6 +3"
+
   if (upgradedCard.damageRoll) {
     var _upgradedCard$damageR = upgradedCard.damageRoll,
       _upgradedCard$damageR2 = _upgradedCard$damageR.dice,
@@ -2506,6 +2525,47 @@ function socketCardWithGem(card, gem) {
   if ("inkAdd" in gem) applyEffect("inkAdd", gem.inkAdd, 1);
   if ("healthCost" in gem) applyEffect("healthCost", gem.healthCost, -1);
 
+  // === Add upgradesOnCast property ===
+  if ("upgradesOnCast" in gem) {
+    socketedCard.upgradesOnCast = (socketedCard.upgradesOnCast || 0) + gem.upgradesOnCast;
+  }
+  // === Apply ink cost increase per level (fire effect)
+  if ("inkCostIncreasePerLevel" in gem) {
+    socketedCard.inkCostIncreasePerLevel = gem.inkCostIncreasePerLevel;
+    // Apply retroactive increase if inkCost exists
+    if (typeof socketedCard.inkCost === "number") {
+      socketedCard.inkCost += gem.inkCostIncreasePerLevel * upgradeLevel;
+    }
+  }
+
+  // === Apply damage multiplier per level (fire effect)
+  if ("damageMultiplierPerLevel" in gem) {
+    socketedCard.damageMultiplierPerLevel = gem.damageMultiplierPerLevel;
+    // Apply retroactive multiplier if damage exists
+    if (typeof socketedCard.damage === "number") {
+      socketedCard.damage *= Math.pow(gem.damageMultiplierPerLevel, upgradeLevel);
+    }
+  }
+
+  // === Merge damageTypes (if gem has them) ===
+  if (Array.isArray(gem.damageTypes)) {
+    socketedCard.damageTypes = Array.isArray(socketedCard.damageTypes) ? _toConsumableArray(socketedCard.damageTypes) : [];
+    var _iterator3 = _createForOfIteratorHelper(gem.damageTypes),
+      _step3;
+    try {
+      for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
+        var dmgType = _step3.value;
+        if (!socketedCard.damageTypes.includes(dmgType)) {
+          socketedCard.damageTypes.push(dmgType);
+        }
+      }
+    } catch (err) {
+      _iterator3.e(err);
+    } finally {
+      _iterator3.f();
+    }
+  }
+
   // === Add damageRoll support (e.g., Amber) ===
 
   if ("damageRoll" in gem && _typeof(gem.damageRoll) === "object") {
@@ -2515,16 +2575,10 @@ function socketCardWithGem(card, gem) {
     var baseSides = gemRoll.sides || 0;
     var baseBonus = gemRoll.flatBonus || 0;
     socketedCard.damageRoll = {
-      type: gemRoll.type || null,
       dice: (((_socketedCard$damageR = socketedCard.damageRoll) === null || _socketedCard$damageR === void 0 ? void 0 : _socketedCard$damageR.dice) || 0) + baseDice + upgradeLevel,
       sides: (((_socketedCard$damageR2 = socketedCard.damageRoll) === null || _socketedCard$damageR2 === void 0 ? void 0 : _socketedCard$damageR2.sides) || 0) + baseSides + upgradeLevel,
       flatBonus: (((_socketedCard$damageR3 = socketedCard.damageRoll) === null || _socketedCard$damageR3 === void 0 ? void 0 : _socketedCard$damageR3.flatBonus) || 0) + baseBonus + upgradeLevel
     };
-  }
-
-  // === Add conditional dice-growth mechanic ===
-  if ("addDiceSidesOnCast" in gem) {
-    socketedCard.addDiceSidesOnCast = (socketedCard.addDiceSidesOnCast || 0) + gem.addDiceSidesOnCast;
   }
 
   // === Attach gem and rename card ===
@@ -2567,12 +2621,12 @@ function checkRelicTriggers(state, triggerEvent) {
   };
   var updatedState = _objectSpread({}, state);
   var result = context.payload || null;
-  var _iterator3 = _createForOfIteratorHelper(updatedState.relicBelt),
-    _step3;
+  var _iterator4 = _createForOfIteratorHelper(updatedState.relicBelt),
+    _step4;
   try {
     var _loop4 = function _loop4() {
-        var _relic$triggers, _result$damageRoll;
-        var relic = _step3.value;
+        var _relic$triggers;
+        var relic = _step4.value;
         var effect = (_relic$triggers = relic.triggers) === null || _relic$triggers === void 0 ? void 0 : _relic$triggers[triggerEvent];
         if (!effect) return 0; // continue
         if (triggerEvent === TRIGGER_EVENTS.DRINK_POTION && context.potion) {
@@ -2583,21 +2637,13 @@ function checkRelicTriggers(state, triggerEvent) {
             });
           }
         }
-        if (triggerEvent === TRIGGER_EVENTS.DEAL_DAMAGE && typeof context.amount === "number" && context.damageType && effect.multiplyDamage && effect.damageTypeTrigger === context.damageType) {
+        if (triggerEvent === TRIGGER_EVENTS.DEAL_DAMAGE && typeof context.amount === "number" && typeof context.damageType === "string" && effect.multiplyDamage && effect.damageTypeTrigger === context.damageType) {
           var bonusDamage = context.amount * (effect.multiplyDamage - 1);
-          updatedState = dealDamage(updatedState, bonusDamage, context.damageType, {
+          updatedState = dealDamage(updatedState, bonusDamage, [context.damageType], {
             isBonus: true
           });
           updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-            log: ["".concat(relic.name, " doubled your ").concat(context.damageType, " damage for +").concat(bonusDamage, ".")].concat(_toConsumableArray(updatedState.log))
-          });
-        }
-        if (triggerEvent === TRIGGER_EVENTS.INCREASE_DICE_SIDES && effect.bonusSides && context.payload) {
-          result = _objectSpread(_objectSpread({}, context.payload), {}, {
-            bonusSides: effect.bonusSides
-          });
-          updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-            log: ["".concat(relic.name, " added ").concat(effect.bonusSides, " extra side").concat(effect.bonusSides > 1 ? "s" : "", " to a spell\u2019s dice.")].concat(_toConsumableArray(updatedState.log))
+            log: ["".concat(relic.name, " increased your ").concat(context.damageType, " damage by +").concat(bonusDamage, ".")].concat(_toConsumableArray(updatedState.log))
           });
         }
         if (triggerEvent === TRIGGER_EVENTS.POTION_PICKUP && effect.upgradePotion && result) {
@@ -2612,7 +2658,7 @@ function checkRelicTriggers(state, triggerEvent) {
             log: ["".concat(relic.name, " upgraded a card when you picked it up.")].concat(_toConsumableArray(updatedState.log))
           });
         }
-        if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP && effect.reduceInkCostIfFire && result && ((_result$damageRoll = result.damageRoll) === null || _result$damageRoll === void 0 ? void 0 : _result$damageRoll.type) === DAMAGE_TYPES.FIRE) {
+        if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP && effect.reduceInkCostIfFire && result && Array.isArray(result.damageTypes) && result.damageTypes.includes(DAMAGE_TYPES.FIRE)) {
           result = _objectSpread(_objectSpread({}, result), {}, {
             inkCost: Math.max(0, result.inkCost - effect.reduceInkCostIfFire)
           });
@@ -2627,8 +2673,7 @@ function checkRelicTriggers(state, triggerEvent) {
           if (effect.reduceInkCostOfFireCardsInDeck > 0) {
             var modifiedCount = 0;
             campaign.deck = campaign.deck.map(function (card) {
-              var _card$damageRoll;
-              if (((_card$damageRoll = card.damageRoll) === null || _card$damageRoll === void 0 ? void 0 : _card$damageRoll.type) === DAMAGE_TYPES.FIRE && typeof card.inkCost === "number") {
+              if (Array.isArray(card.damageTypes) && card.damageTypes.includes(DAMAGE_TYPES.FIRE) && typeof card.inkCost === "number") {
                 modifiedCount++;
                 return _objectSpread(_objectSpread({}, card), {}, {
                   inkCost: Math.max(0, card.inkCost - effect.reduceInkCostOfFireCardsInDeck)
@@ -2658,6 +2703,12 @@ function checkRelicTriggers(state, triggerEvent) {
             campaign.books += effect.bonusBooks;
             updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
               log: ["".concat(relic.name, " gave you +").concat(effect.bonusBooks, " max books.")].concat(_toConsumableArray(updatedState.log))
+            });
+          }
+          if (effect.bonusHandSize) {
+            campaign.handSize += effect.bonusHandSize;
+            updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+              log: ["".concat(relic.name, " increased your hand size by ").concat(effect.bonusHandSize, ".")].concat(_toConsumableArray(updatedState.log))
             });
           }
           if (effect.bonusHealth) {
@@ -2759,6 +2810,16 @@ function checkRelicTriggers(state, triggerEvent) {
             });
           }
         }
+        if (triggerEvent === TRIGGER_EVENTS.PLAY_CARD && effect.ifLightningDrawCards && result &&
+        // the card being played
+        Array.isArray(result.damageTypes) && result.damageTypes.includes(DAMAGE_TYPES.LIGHTNING)) {
+          for (var i = 0; i < effect.ifLightningDrawCards; i++) {
+            updatedState = drawCard(updatedState);
+          }
+          updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+            log: ["".concat(relic.name, " triggered and drew ").concat(effect.ifLightningDrawCards, " card").concat(effect.ifLightningDrawCards > 1 ? "s" : "", " from casting a Lightning spell.")].concat(_toConsumableArray(updatedState.log))
+          });
+        }
         if (triggerEvent === TRIGGER_EVENTS.DRAW_CARD) {
           if (!updatedState.combat || updatedState.currentPhase !== PHASES.COMBAT) return 0; // continue
           if (effect.bunnyAdd) {
@@ -2802,14 +2863,14 @@ function checkRelicTriggers(state, triggerEvent) {
         }
       },
       _ret2;
-    for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
+    for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
       _ret2 = _loop4();
       if (_ret2 === 0) continue;
     }
   } catch (err) {
-    _iterator3.e(err);
+    _iterator4.e(err);
   } finally {
-    _iterator3.f();
+    _iterator4.f();
   }
   return _objectSpread(_objectSpread({}, updatedState), {}, {
     result: result
@@ -3080,12 +3141,12 @@ function generateEnemy(state, path) {
 
   // === Build abilities object ===
   var abilities = {};
-  var _iterator4 = _createForOfIteratorHelper(selectedAbilities),
-    _step4;
+  var _iterator5 = _createForOfIteratorHelper(selectedAbilities),
+    _step5;
   try {
-    for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
+    for (_iterator5.s(); !(_step5 = _iterator5.n()).done;) {
       var _data$baseValue, _data$value;
-      var key = _step4.value;
+      var key = _step5.value;
       var data = enemyAbilityDataMap[key];
       var baseValue = (_data$baseValue = data.baseValue) !== null && _data$baseValue !== void 0 ? _data$baseValue : 0;
       var override = (_data$value = data.value) !== null && _data$value !== void 0 ? _data$value : 0;
@@ -3105,9 +3166,9 @@ function generateEnemy(state, path) {
     }
     // === Name Generation ===
   } catch (err) {
-    _iterator4.e(err);
+    _iterator5.e(err);
   } finally {
-    _iterator4.f();
+    _iterator5.f();
   }
   var name;
   var smallMonsters = ["goblin", "kobold", "rat", "spider", "imp", "gremlin", "bat", "quasit", "skeleton", "zombie"];
@@ -3199,13 +3260,13 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
     }, 0);
     var roll = Math.random() * totalWeight;
     var selected = void 0;
-    var _iterator5 = _createForOfIteratorHelper(available),
-      _step5;
+    var _iterator6 = _createForOfIteratorHelper(available),
+      _step6;
     try {
-      for (_iterator5.s(); !(_step5 = _iterator5.n()).done;) {
-        var _step5$value = _slicedToArray(_step5.value, 2),
-          type = _step5$value[0],
-          weight = _step5$value[1];
+      for (_iterator6.s(); !(_step6 = _iterator6.n()).done;) {
+        var _step6$value = _slicedToArray(_step6.value, 2),
+          type = _step6$value[0],
+          weight = _step6$value[1];
         if (roll < weight) {
           selected = type;
           break;
@@ -3213,9 +3274,9 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
         roll -= weight;
       }
     } catch (err) {
-      _iterator5.e(err);
+      _iterator6.e(err);
     } finally {
-      _iterator5.f();
+      _iterator6.f();
     }
     usedTypes.add(selected);
     if (selected === "gold") {
@@ -4330,26 +4391,37 @@ function takeDamage(state, dmg) {
   return skipDeathCheck ? updatedState : checkCombatEndViaDeath(updatedState);
 }
 function dealDamage(state, damage) {
-  var damageType = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : null;
+  var damageTypes = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : [];
   var options = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : {};
   var _options$isBonus = options.isBonus,
     isBonus = _options$isBonus === void 0 ? false : _options$isBonus;
   var newEnemyHp = Math.max(0, state.combat.enemyHp - damage);
-  console.log(">> dealDamage: current enemy HP = ".concat(state.combat.enemyHp, ", damage = ").concat(damage, ", new = ").concat(newEnemyHp, ", type = ").concat(damageType, ", isBonus = ").concat(isBonus));
+  console.log(">> dealDamage: current enemy HP = ".concat(state.combat.enemyHp, ", damage = ").concat(damage, ", new = ").concat(newEnemyHp, ", types = [").concat(damageTypes.join(", "), "], isBonus = ").concat(isBonus));
   var updatedState = _objectSpread(_objectSpread({}, state), {}, {
     combat: _objectSpread(_objectSpread({}, state.combat), {}, {
       enemyHp: newEnemyHp
     }),
-    log: ["\u2694\uFE0F You dealt ".concat(damage, " damage to ").concat(state.combat.enemy.name) + (damageType ? " (".concat(damageType, ")") : "") + "."].concat(_toConsumableArray(state.log))
+    log: ["\u2694\uFE0F You dealt ".concat(damage, " damage to ").concat(state.combat.enemy.name) + (damageTypes.length > 0 ? " (".concat(damageTypes.join(", "), ")") : "") + "."].concat(_toConsumableArray(state.log))
   });
 
   // Only trigger relics if this isn't bonus damage
   if (!isBonus) {
-    updatedState = checkRelicTriggers(updatedState, TRIGGER_EVENTS.DEAL_DAMAGE, {
-      damageType: damageType,
-      amount: damage,
-      enemy: state.combat.enemy
-    });
+    var _iterator7 = _createForOfIteratorHelper(damageTypes),
+      _step7;
+    try {
+      for (_iterator7.s(); !(_step7 = _iterator7.n()).done;) {
+        var damageType = _step7.value;
+        updatedState = checkRelicTriggers(updatedState, TRIGGER_EVENTS.DEAL_DAMAGE, {
+          damageType: damageType,
+          amount: damage,
+          enemy: state.combat.enemy
+        });
+      }
+    } catch (err) {
+      _iterator7.e(err);
+    } finally {
+      _iterator7.f();
+    }
   }
   updatedState = checkCombatEndViaDeath(updatedState);
   updatedState = checkGameOver(updatedState);
@@ -4360,17 +4432,14 @@ function playCard(state, index) {
   var hand = _toConsumableArray(state.combat.hand);
   var card = hand[index];
 
-  // === Guard clause: invalid or uncastable ===
+  /* ── Guard clauses ─────────────────────────────────────────────────── */
   if (!card || card.uncastable) return state;
-
-  // === Guard clause: not enough ink ===
   if (((_card$inkCost2 = card.inkCost) !== null && _card$inkCost2 !== void 0 ? _card$inkCost2 : 0) > state.combat.ink) return state;
-  var updatedState = _objectSpread({}, state);
 
-  // === Step 1: Deduct ink ===
-  updatedState = modifyCombatInk(updatedState, -card.inkCost);
+  /* ── Step 1: deduct ink ────────────────────────────────────────────── */
+  var updatedState = modifyCombatInk(_objectSpread({}, state), -card.inkCost);
 
-  // === Step 2: Remove card from hand ===
+  /* ── Step 2: remove card from hand ─────────────────────────────────── */
   hand.splice(index, 1);
   updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
     combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
@@ -4378,43 +4447,25 @@ function playCard(state, index) {
     })
   });
 
-  // === Step 3: Check relic triggers ===
+  /* ── Step 3: relic triggers for PLAY_CARD ──────────────────────────── */
   updatedState = checkRelicTriggers(updatedState, TRIGGER_EVENTS.PLAY_CARD, {
     card: card
   });
 
-  // === Step 4: Handle card movement ===
-  var isInstant = card.cardType === CARD_TYPES.INSTANT;
-  var goesToExile = !!card.exileOnCast;
-  if (isInstant) {
-    if (goesToExile) {
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          exile: [].concat(_toConsumableArray(updatedState.combat.exile), [card])
-        })
-      });
-    } else {
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          graveyard: [].concat(_toConsumableArray(updatedState.combat.graveyard), [card])
-        })
-      });
-    }
-
-    // === Step 5: Resolve and check death ===
+  /* ── INSTANT cards resolve immediately ─────────────────────────────── */
+  if (card.cardType === CARD_TYPES.INSTANT) {
+    //  No zone-placement here!  resolveSpell will handle graveyard/exile
     updatedState = resolveSpell(updatedState, card);
     updatedState = checkCombatEndViaDeath(updatedState);
     updatedState = checkGameOver(updatedState);
     return updatedState;
   }
 
-  // === Step 6: Handle SPELL cards ===
+  /* ── SPELL cards: place into spellbook ─────────────────────────────── */
   var spellbook = _toConsumableArray(updatedState.combat.spellbook);
   var firstBlank = spellbook.indexOf("blank page");
-  if (firstBlank === -1) {
-    // No room in spellbook — can't play (shouldn't happen due to render guard)
-    return updatedState;
-  }
+  if (firstBlank === -1) return updatedState; // failsafe
+
   spellbook[firstBlank] = card;
   updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
     combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
@@ -4422,9 +4473,8 @@ function playCard(state, index) {
     })
   });
 
-  // === Optional: trigger auto-cast if spellbook is full ===
-  var spellbookFull = !spellbook.includes("blank page");
-  if (spellbookFull) {
+  /* ── Auto-cast when the spellbook is full ───────────────────────────── */
+  if (!spellbook.includes("blank page")) {
     updatedState = castSpellbook(updatedState);
     updatedState = checkCombatEndViaDeath(updatedState);
     updatedState = checkGameOver(updatedState);
@@ -4439,20 +4489,20 @@ function castSpellbook(state) {
   updatedState = checkRelicTriggers(updatedState, TRIGGER_EVENTS.CAST_SPELLBOOK);
 
   // 🔮 Cast each non-blank spell in the spellbook
-  var _iterator6 = _createForOfIteratorHelper(updatedState.combat.spellbook),
-    _step6;
+  var _iterator8 = _createForOfIteratorHelper(updatedState.combat.spellbook),
+    _step8;
   try {
-    for (_iterator6.s(); !(_step6 = _iterator6.n()).done;) {
-      var card = _step6.value;
+    for (_iterator8.s(); !(_step8 = _iterator8.n()).done;) {
+      var card = _step8.value;
       if (_typeof(card) !== "object" || card.name === "blank page") continue;
       updatedState = resolveSpell(updatedState, card);
     }
 
     // 🐇 Release bunnies (deal damage equal to bunny count)
   } catch (err) {
-    _iterator6.e(err);
+    _iterator8.e(err);
   } finally {
-    _iterator6.f();
+    _iterator8.f();
   }
   updatedState = releaseBunnies(updatedState);
 
@@ -4487,8 +4537,8 @@ function releaseBunnies(state) {
   }
   var updatedState = _objectSpread({}, state);
 
-  // ✅ Pass DAMAGE_TYPES.BUNNY to dealDamage
-  updatedState = dealDamage(updatedState, bunnyDamage, DAMAGE_TYPES.BUNNY);
+  // ✅ Pass as an array now
+  updatedState = dealDamage(updatedState, bunnyDamage, [DAMAGE_TYPES.BUNNY]);
   updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
     combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
       bunnies: 0
@@ -4525,7 +4575,6 @@ function resolveSpell(state, card) {
   if (!card || _typeof(card) !== "object") return state;
   var updatedState = _objectSpread({}, state);
   var effects = [];
-  var cardToStore = card; // Will be replaced if upgraded
 
   // === Bunny Add ===
   if (card.bunnyAdd) {
@@ -4593,92 +4642,60 @@ function resolveSpell(state, card) {
     effects.push("Upgraded ".concat(_numToUpgrade2, " card(s) in hand"));
   }
 
-  // === DamageRoll Support ===
-  if (card.damageRoll) {
-    var _card$damageRoll2 = card.damageRoll,
-      dice = _card$damageRoll2.dice,
-      sides = _card$damageRoll2.sides,
-      flatBonus = _card$damageRoll2.flatBonus,
-      type = _card$damageRoll2.type;
-    var damage = rollDice(dice, sides) + flatBonus;
-    var damageType = type || DAMAGE_TYPES.BUNNY;
-    updatedState = dealDamage(updatedState, damage, damageType);
-    effects.push("Dealt ".concat(damage, " ").concat(damageType, " damage"));
-
-    // === Auto-upgrade sides AFTER damage is dealt
-    if (card.addDiceSidesOnCast) {
-      var _increaseCardDiceSide = increaseCardDiceSides(card, card.addDiceSidesOnCast, updatedState),
-        upgradedCard = _increaseCardDiceSide.card,
-        postUpgradeState = _increaseCardDiceSide.state;
-      updatedState = postUpgradeState;
-
-      // === Replace in campaign.deck
-      var updatedDeck = updatedState.campaign.deck.map(function (c) {
-        return c.name === card.name ? upgradedCard : c;
-      });
-
-      // === Remove from spellbook and add upgraded to graveyard
-      var updatedSpellbook = updatedState.combat.spellbook.filter(function (c) {
-        return c.name !== card.name;
-      });
-      var updatedGraveyard = [].concat(_toConsumableArray(updatedState.combat.graveyard), [upgradedCard]);
-      var updatedTrashpile = [].concat(_toConsumableArray(updatedState.trashpile || []), [card]);
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        campaign: _objectSpread(_objectSpread({}, updatedState.campaign), {}, {
-          deck: updatedDeck
-        }),
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          spellbook: updatedSpellbook,
-          graveyard: updatedGraveyard
-        }),
-        trashpile: updatedTrashpile
-      });
-    } else {
-      // No upgrade: move original card to graveyard
-      var _updatedSpellbook = updatedState.combat.spellbook.filter(function (c) {
-        return c.name !== card.name;
-      });
-      var _updatedGraveyard = [].concat(_toConsumableArray(updatedState.combat.graveyard), [card]);
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          spellbook: _updatedSpellbook,
-          graveyard: _updatedGraveyard
-        })
-      });
-    }
-  }
-
-  // === Flat Damage (non-rolled) ===
+  // === Flat Damage ===
   if (card.damage) {
-    var _card$damageType;
-    var _type2 = (_card$damageType = card.damageType) !== null && _card$damageType !== void 0 ? _card$damageType : DAMAGE_TYPES.BUNNY;
-    updatedState = dealDamage(updatedState, card.damage, _type2);
-    effects.push("Dealt ".concat(card.damage, " ").concat(_type2, " damage"));
+    var types = Array.isArray(card.damageTypes) && card.damageTypes.length > 0 ? card.damageTypes : [DAMAGE_TYPES.BUNNY];
+    updatedState = dealDamage(updatedState, card.damage, types);
+    effects.push("Dealt ".concat(card.damage, " ").concat(types.join("/"), " damage"));
   }
 
-  // === Move to Exile or Graveyard (Safely Replace in Spellbook) ===
-  var destination = card.exileOnCast ? "exile" : "graveyard";
-  var spellbookIndex = updatedState.combat.spellbook.findIndex(function (c) {
-    return c.name === card.name;
-  });
-  if (spellbookIndex !== -1) {
-    var _updatedSpellbook2 = _toConsumableArray(updatedState.combat.spellbook);
-    _updatedSpellbook2.splice(spellbookIndex, 1); // Remove original
+  // === Rolled Damage (e.g., Lightning) ===
+  if (card.damageRoll && typeof card.damageRoll.dice === "number" && typeof card.damageRoll.sides === "number") {
+    var _card$damageRoll = card.damageRoll,
+      dice = _card$damageRoll.dice,
+      sides = _card$damageRoll.sides,
+      _card$damageRoll$flat = _card$damageRoll.flatBonus,
+      flatBonus = _card$damageRoll$flat === void 0 ? 0 : _card$damageRoll$flat;
+    var damage = rollDice(dice, sides, flatBonus);
+    var _types = Array.isArray(card.damageTypes) && card.damageTypes.length > 0 ? card.damageTypes : [DAMAGE_TYPES.BUNNY];
+    updatedState = dealDamage(updatedState, damage, _types);
+    var typeList = _types.join(" & ");
+    effects.push("Dealt ".concat(damage, " ").concat(typeList, " damage"));
+  }
 
-    // Safely move original to trashpile if desired
-    var _updatedTrashpile = [].concat(_toConsumableArray(updatedState.trashpile || []), [card]);
+  /// === Upgrade on Cast (if applicable) ===
+  if (card.upgradesOnCast) {
+    var upgradedCard = upgradeCard(card, card.upgradesOnCast);
+
+    // === Update campaign deck with upgraded version
+    updatedState = upgradeSpecificCardInCampaignDeck(updatedState, card, card.upgradesOnCast);
+    var destination = upgradedCard.exileOnCast ? "exile" : "graveyard";
+    var updatedSpellbook = updatedState.combat.spellbook.filter(function (c) {
+      return c.name !== card.name;
+    });
     updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
       combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, _defineProperty({
-        spellbook: _updatedSpellbook2
-      }, destination, [].concat(_toConsumableArray(updatedState.combat[destination]), [cardToStore])))
+        spellbook: updatedSpellbook
+      }, destination, [].concat(_toConsumableArray(updatedState.combat[destination]), [upgradedCard]))),
+      trashpile: [].concat(_toConsumableArray(updatedState.trashpile || []), [card]),
+      log: ["Cast ".concat(card.name, ": ").concat(effects.join(", "))].concat(_toConsumableArray(updatedState.log))
     });
+    return checkCombatEndViaDeath(updatedState);
+  } else {
+    // === Move to Exile or Graveyard ===
+    var _destination = card.exileOnCast ? "exile" : "graveyard";
+    var _updatedSpellbook = updatedState.combat.spellbook.filter(function (c) {
+      return c.name !== card.name;
+    });
+    updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+      combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, _defineProperty({
+        spellbook: _updatedSpellbook
+      }, _destination, [].concat(_toConsumableArray(updatedState.combat[_destination]), [card]))),
+      trashpile: [].concat(_toConsumableArray(updatedState.trashpile || []), [card]),
+      log: ["Cast ".concat(card.name, ": ").concat(effects.join(", "))].concat(_toConsumableArray(updatedState.log))
+    });
+    return checkCombatEndViaDeath(updatedState);
   }
-
-  // === Log the spell cast
-  updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-    log: ["Cast ".concat(card.name, ": ").concat(effects.join(", "))].concat(_toConsumableArray(updatedState.log))
-  });
-  return checkCombatEndViaDeath(updatedState);
 }
 function combatEnd(state) {
   var _context$result, _updatedState$combat4;
@@ -4820,73 +4837,63 @@ function rollDice(numDice, sidesPerDie) {
   }
   return total + flatBonus;
 }
-function increaseCardDiceSides(card) {
-  var sidesToAdd = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 1;
-  var state = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : null;
-  if (!card || _typeof(card) !== "object" || !card.damageRoll || typeof card.damageRoll.sides !== "number") {
-    console.warn("Card has no valid damageRoll.sides:", card);
-    return {
-      card: card,
-      state: state
-    };
+function upgradeSpecificCardInCampaignDeck(state, card) {
+  var _state$campaign2;
+  var upgrades = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 1;
+  if (!(state !== null && state !== void 0 && (_state$campaign2 = state.campaign) !== null && _state$campaign2 !== void 0 && _state$campaign2.deck) || !Array.isArray(state.campaign.deck)) {
+    console.error("No valid campaign deck found in state.");
+    return state;
   }
-  var totalSidesToAdd = sidesToAdd;
-  if (state) {
-    var _triggerResult$result;
-    var triggerResult = checkRelicTriggers(state, TRIGGER_EVENTS.INCREASE_DICE_SIDES, {
-      payload: {
-        card: card,
-        sidesToAdd: sidesToAdd
-      }
-    });
-    state = triggerResult;
-    var bonus = ((_triggerResult$result = triggerResult.result) === null || _triggerResult$result === void 0 ? void 0 : _triggerResult$result.bonusSides) || 0;
-    totalSidesToAdd += bonus;
+  var deck = _toConsumableArray(state.campaign.deck);
+  var index = deck.findIndex(function (c) {
+    return c.name === card.name;
+  });
+  if (index === -1) {
+    console.warn("Card not found in campaign deck: ".concat(card.name));
+    return state;
   }
-  var newSides = card.damageRoll.sides + totalSidesToAdd;
-  var updatedCard = _objectSpread(_objectSpread({}, card), {}, {
-    damageRoll: _objectSpread(_objectSpread({}, card.damageRoll), {}, {
-      sides: newSides
+  deck[index] = upgradeCard(deck[index], upgrades);
+  return _objectSpread(_objectSpread({}, state), {}, {
+    campaign: _objectSpread(_objectSpread({}, state.campaign), {}, {
+      deck: deck
     })
   });
-  var dice = updatedCard.damageRoll.dice || 1;
-  var baseName = card.name.replace(/\s\d+d\d+$/, "");
-  updatedCard.name = "".concat(baseName, " ").concat(dice, "d").concat(newSides);
-  return {
-    card: updatedCard,
-    state: state
-  };
 }
 
-//current bugs:
+//current bugs/fixes/additions.
+
 // if you start a new game after losing, it seems to carry on some of the previous game state. Make sure to completely clean the state.
 // game gets mega bugged if you continue to play after a defeat. Really double check the state cleanup.
 
+//render: inspect deck / combat deck / graveyard / exile should all dispaly the #of cards in brackets.
+
+//shop bugs
 //purchasing a gem doesn't remove it from the shop, so you can buy it multiple times.
 
 //downgrading cards doesn't affect the new fire and lightning mechanics - it should.
 
-//lightning cards dump the old copy into the graveyard as well as the updated copy.
-//upgrading lightning cards with a lightning rod bugs their name. (and possibly their effects?)
-// amber (the lightning gem) doesn't seem to trigger cardside upgrading correctly.
-
+//potion bugs
 // ponderous potion doesn't draw cards. (and should log)
 // bunny brew doesn't work. (and should log)
 // liquid enchantment behaves strangely - possibly not working.
 // squid brew shouldnt increase max ink.
 
+//relic bugs
 //discount voucher should act immediately on pickup as well as on shopfront load.
+//firemage's hat should reduce ink costs by 1, but it doesn't work correctly.
+//carrot staff doesn't round numbers; it can add 0.5 bunnies, which is weird.
+// lightning rod doesn't work - no cards drawn.
 // whetstone doesnt work if you buy things from shop.
 
-//There should be fewer card offering paths.
+//bug with socketing naming (or at least displaying) - eg., Amber Bunnymancy +1 2d5+1 (checkinspect deck render as well as the naming logic, error could be in either place)
 
 //losing to bosses does't make you lose the game (it should, but it doesn't).
 
-//firemage's hat doesn't reduce ink costs correctly.
-
-//mythic relics are showing up in regular relic offerings
-
 //expanding the game
+//consider doubling enemy HP and adding +1 book to base state. Probably more fun.
+//consider a once-per-combat 'mulligan' button, allowing the player to craft the perfect spellbook or dig for their best card.
+//a relic to increase the mulligan count.
+// a mythic gem that makes a spell cost 1 less ink, be an instant, and exile on cast.
 // implement a 'gold hoarding matters' mythic that adds bunnies based on gold.
 // implement "critical hit" mechanics; cards, gems, and relics, plus three 'critical hit matters' mythics - one that boosts crit amounts,  one that increases crit chance, and one that gives crits to everything.
 // implement three boss abilties keyed to the boss name: 'downgrade all cards in enemy deck', '+1 ink cost to all enemy cards', and 'enemy loses 1 hp whenever they play a card'.
@@ -4915,7 +4922,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "52101" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "52685" + '/');
   ws.onmessage = function (event) {
     checkedAssets = {};
     assetsToAccept = [];
