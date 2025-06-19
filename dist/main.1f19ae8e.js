@@ -178,7 +178,8 @@ var TRIGGER_EVENTS = Object.freeze({
   PLAY_CARD: "PLAY_CARD",
   CAST_SPELLBOOK: "CAST_SPELLBOOK",
   COMBAT_END: "COMBAT_END",
-  DEAL_DAMAGE: "DEAL_DAMAGE"
+  DEAL_DAMAGE: "DEAL_DAMAGE",
+  DRAW_CARD: "DRAW_CARD"
 });
 var PATHS = Object.freeze({
   EASY_FIGHT: "Easy Fight",
@@ -446,26 +447,29 @@ var cardList = [{
   cardType: CARD_TYPES.SPELL,
   rarity: RARITIES.COMMON,
   inkCost: 0,
-  bunnyAdd: 6
+  bunnyAdd: 8
 }, {
   name: "Cloudfluff Boon",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.RARE,
   inkCost: 0,
-  bunnyAdd: 3
+  bunnyAdd: 4,
+  exileOnCast: true
 }, {
   name: "Midas Touch",
   cardType: CARD_TYPES.SPELL,
   rarity: RARITIES.RARE,
-  inkCost: 2,
-  goldAdd: 35
-}, {
-  name: "Enchant Library",
-  cardType: CARD_TYPES.SPELL,
-  rarity: RARITIES.RARE,
-  inkCost: 2,
-  permanentlyUpgradeRandomCardsInDeck: 3
-}, {
+  inkCost: 1,
+  goldAddPerCardInDeck: 1
+},
+// {
+//   name: "Enchant Library",
+//   cardType: CARD_TYPES.SPELL,
+//   rarity: RARITIES.RARE,
+//   inkCost: 2,
+//   permanentlyUpgradeRandomCardsInDeck: 3,
+// },
+{
   name: "Dusk Lotus",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.MYTHIC,
@@ -477,32 +481,42 @@ var cardList = [{
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.UNCOMMON,
   inkCost: 0,
-  goldAdd: 8
+  goldAdd: 8,
+  exileOnCast: true
 }, {
   name: "Carrot Festival",
   cardType: CARD_TYPES.SPELL,
   rarity: RARITIES.COMMON,
   inkCost: 1,
-  bunnyAdd: 12
+  bunnyAddPerCardInDeck: 1
 }, {
   name: "Mega Bunnyplication",
   cardType: CARD_TYPES.SPELL,
   rarity: RARITIES.COMMON,
   inkCost: 2,
-  bunnyMult: 4
+  bunnyMult: 3.5
 }, {
   name: "Enchant Fingertips",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.UNCOMMON,
   inkCost: 1,
-  permanentlyUpgradeRandomCardsInHand: 1
+  permanentlyUpgradeRandomCardsInHand: 1,
+  exileOnCast: true
 }, {
-  name: "Enchant Hands",
-  cardType: CARD_TYPES.INSTANT,
+  name: "Healing Light",
+  cardType: CARD_TYPES.SPELL,
   rarity: RARITIES.RARE,
-  inkCost: 2,
-  permanentlyUpgradeRandomCardsInHand: 7
-}, {
+  inkCost: 1,
+  healPerCardInDeck: 1
+},
+// {
+//   name: "Enchant Hands",
+//   cardType: CARD_TYPES.INSTANT,
+//   rarity: RARITIES.RARE,
+//   inkCost: 2,
+//   permanentlyUpgradeRandomCardsInHand: 7,
+// },
+{
   name: "Wisdom of the Warrens",
   cardType: CARD_TYPES.INSTANT,
   rarity: RARITIES.MYTHIC,
@@ -553,6 +567,20 @@ var cardList = [{
     sides: 2,
     flatBonus: 0
   }
+}, {
+  name: "Vampire Bunnies",
+  cardType: CARD_TYPES.SPELL,
+  rarity: RARITIES.RARE,
+  inkCost: 1,
+  heal: 5,
+  bunnyAdd: 5
+}, {
+  name: "Weaken",
+  rarity: RARITIES.UNCOMMON,
+  inkCost: 1,
+  cardType: CARD_TYPES.SPELL,
+  damageTypes: [DAMAGE_TYPES.POISON],
+  weakenEnemyHpPercent: 0.15 // 15% max HP as bonus poison damage
 },
 // === Curses ===
 {
@@ -591,7 +619,7 @@ var cardList = [{
 var gemList = [{
   name: "Amethyst",
   rarity: RARITIES.COMMON,
-  bunnyAdd: 2
+  bunnyAdd: 3
 }, {
   name: "Lapis Lazuli",
   rarity: RARITIES.COMMON,
@@ -600,7 +628,7 @@ var gemList = [{
 // {
 //   name: "Sapphire",
 //   rarity: RARITIES.UNCOMMON,
-//   cardDraw: 1,
+//   cardDrawOnDraw: 1,
 // },
 {
   name: "Topaz",
@@ -608,7 +636,7 @@ var gemList = [{
   goldAdd: 7
 }, {
   name: "Jet",
-  rarity: RARITIES.MYTHIC,
+  rarity: RARITIES.RARE,
   permanentlyUpgradeRandomCardsInDeck: 1
 }, {
   name: "Ruby",
@@ -619,7 +647,7 @@ var gemList = [{
   damageMultiplierPerLevel: 2
 }, {
   name: "Amber",
-  rarity: RARITIES.RARE,
+  rarity: RARITIES.MYTHIC,
   damageRoll: {
     dice: 1,
     sides: 4,
@@ -627,6 +655,16 @@ var gemList = [{
   },
   upgradesOnCast: 1,
   damageTypes: [DAMAGE_TYPES.LIGHTNING]
+}, {
+  name: "Moonstone",
+  rarity: RARITIES.UNCOMMON,
+  heal: 10
+}, {
+  name: "Emerald",
+  rarity: RARITIES.UNCOMMON,
+  weakenEnemyHpPercent: 0.1,
+  // Deals bonus damage equal to 10% of enemy max HP
+  damageTypes: [DAMAGE_TYPES.POISON]
 }];
 var relicList = [{
   name: "Magic Scroll",
@@ -654,7 +692,7 @@ var relicList = [{
   name: "Heartstone",
   rarity: RARITIES.COMMON,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
-    bonusHealth: 25
+    bonusHealth: 50
   })
 }, {
   name: "Cowbell",
@@ -674,31 +712,34 @@ var relicList = [{
 //   },
 // },
 {
-  name: "Magic Encyclopedia",
+  name: "Encyclopedia",
   rarity: RARITIES.MYTHIC,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
-    bonusBooks: 1,
-    BonusMulligans: 1
+    bonusBooks: 1
   })
 }, {
-  name: "Magic Inkpot",
+  name: "Inkpot",
   rarity: RARITIES.MYTHIC,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
     bonusInk: 2
   })
 }, {
-  name: "Enchanted Cardsleeves",
+  name: "Cardsleeves",
   rarity: RARITIES.MYTHIC,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
     permanentlyUpgradeRandomCardsInDeck: 5
   })
-}, {
-  name: "Magic Quill",
-  rarity: RARITIES.LEGENDARY,
-  triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
-    bonusInk: 3
-  })
-}, {
+},
+// {
+//   name: "Magic Quill",
+//   rarity: RARITIES.LEGENDARY,
+//   triggers: {
+//     [TRIGGER_EVENTS.RELIC_PICKUP]: {
+//       bonusInk: 2,
+//     },
+//   },
+// },
+{
   name: "Gold Bag",
   rarity: RARITIES.BASIC_POLY,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
@@ -706,9 +747,16 @@ var relicList = [{
   })
 }, {
   name: "Whetstone",
-  rarity: RARITIES.UNCOMMON,
+  rarity: RARITIES.MYTHIC,
   triggers: _defineProperty({}, TRIGGER_EVENTS.CARD_PICKUP, {
     upgradeCard: true
+  })
+}, {
+  name: "Porcelain Koi",
+  rarity: RARITIES.MYTHIC,
+  triggers: _defineProperty({}, TRIGGER_EVENTS.CARD_PICKUP, {
+    bonusGold: 25,
+    bonusHealth: 25
   })
 }, {
   name: "Witch's Cauldron",
@@ -717,18 +765,22 @@ var relicList = [{
     upgradePotion: true
   })
 }, {
-  name: "Crystal Vial",
+  name: "Glittering Vial",
   rarity: RARITIES.UNCOMMON,
   triggers: _defineProperty({}, TRIGGER_EVENTS.DRINK_POTION, {
     healPlayer: 5
   })
-}, {
-  name: "Discount Voucher",
-  rarity: RARITIES.COMMON,
-  triggers: _defineProperty({}, TRIGGER_EVENTS.ASSIGN_SHOP_PRICES, {
-    shopPriceMultiplier: 0.8 // 20% cheaper shop prices
-  })
-}, {
+},
+// {
+//   name: "Discount Voucher",
+//   rarity: RARITIES.COMMON,
+//   triggers: {
+//     [TRIGGER_EVENTS.ASSIGN_SHOP_PRICES]: {
+//       shopPriceMultiplier: 0.8, // 20% cheaper shop prices
+//     },
+//   },
+// },
+{
   name: "Sleeping Bag",
   rarity: RARITIES.COMMON,
   triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
@@ -753,7 +805,6 @@ var relicList = [{
     revealAnonymousPaths: true
   })
 }, {
-  //fix the names of this
   name: "Gem of Weakness",
   rarity: RARITIES.RARE,
   triggers: _defineProperty({}, TRIGGER_EVENTS.COMBAT_START, {
@@ -784,8 +835,7 @@ var relicList = [{
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
     bonusBooks: 1,
     bonusPages: 1,
-    bonusInk: 1,
-    BonusMulligans: 1
+    bonusInk: 1
   })
 }, {
   name: "Voynich Manuscript",
@@ -2345,6 +2395,18 @@ function upgradeCard(card) {
     upgradedCard.bunnyAdd += 3 * level;
     upgradable = true;
   }
+  if ("bunnyAddPerCardInDeck" in upgradedCard) {
+    upgradedCard.bunnyAddPerCardInDeck += 0.5 * level;
+    upgradable = true;
+  }
+  if ("goldAddPerCardInDeck" in upgradedCard) {
+    upgradedCard.goldAddPerCardInDeck += 0.5 * level;
+    upgradable = true;
+  }
+  if ("healPerCardInDeck" in upgradedCard) {
+    upgradedCard.healPerCardInDeck += 0.5 * level;
+    upgradable = true;
+  }
   if ("bunnyMult" in upgradedCard) {
     upgradedCard.bunnyMult += 0.5 * level;
     upgradable = true;
@@ -2371,6 +2433,16 @@ function upgradeCard(card) {
   }
   if ("healthCost" in upgradedCard) {
     upgradedCard.healthCost -= 1 * level;
+    upgradable = true;
+  }
+  if ("heal" in upgradedCard) {
+    upgradedCard.heal += 5 * level;
+    upgradable = true;
+  }
+
+  // ✅ New: Weaken effect scaling
+  if ("weakenEnemyHpPercent" in upgradedCard) {
+    upgradedCard.weakenEnemyHpPercent += 0.05 * level;
     upgradable = true;
   }
 
@@ -2432,13 +2504,18 @@ function downgradeCard(card) {
   var levelDiff = originalLevel - newLevel;
   var applyHalvedBase = function applyHalvedBase() {
     if ("bunnyAdd" in card) downgradedCard.bunnyAdd = Math.floor(card.bunnyAdd / 2);
+    if ("bunnyAddPerCardInDeck" in card) downgradedCard.bunnyAddPerCardInDeck = 0.5;
     if ("bunnyMult" in card) downgradedCard.bunnyMult = Math.floor(card.bunnyMult / 2);
     if ("goldAdd" in card) downgradedCard.goldAdd = Math.floor(card.goldAdd / 2);
+    if ("goldAddPerCardInDeck" in card) downgradedCard.goldAddPerCardInDeck = 0.5;
     if ("permanentlyUpgradeRandomCardsInDeck" in card) downgradedCard.permanentlyUpgradeRandomCardsInDeck = Math.floor(card.permanentlyUpgradeRandomCardsInDeck / 2);
     if ("permanentlyUpgradeRandomCardsInHand" in card) downgradedCard.permanentlyUpgradeRandomCardsInHand = Math.floor(card.permanentlyUpgradeRandomCardsInHand / 2);
     if ("cardDraw" in card) downgradedCard.cardDraw = Math.floor(card.cardDraw / 2);
     if ("inkAdd" in card) downgradedCard.inkAdd = Math.floor(card.inkAdd / 2);
     if ("healthCost" in card) downgradedCard.healthCost = Math.floor(card.healthCost * 1.5);
+    if ("heal" in card) downgradedCard.heal = Math.max(1, Math.floor(card.heal / 2));
+    if ("healPerCardInDeck" in card) downgradedCard.healPerCardInDeck = 0.5;
+    if ("weakenEnemyHpPercent" in card) downgradedCard.weakenEnemyHpPercent = 0.1;
     if (typeof card.damage === "number") downgradedCard.damage = Math.ceil(card.damage / 2);
     if (card.damageRoll) {
       downgradedCard.damageRoll = {
@@ -2452,25 +2529,32 @@ function downgradeCard(card) {
     applyHalvedBase();
   } else {
     if ("bunnyAdd" in downgradedCard) downgradedCard.bunnyAdd -= 3 * levelDiff;
+    if ("bunnyAddPerCardInDeck" in downgradedCard) {
+      downgradedCard.bunnyAddPerCardInDeck = Math.max(0.5, downgradedCard.bunnyAddPerCardInDeck - 0.5 * levelDiff);
+    }
     if ("bunnyMult" in downgradedCard) downgradedCard.bunnyMult -= 0.5 * levelDiff;
     if ("goldAdd" in downgradedCard) downgradedCard.goldAdd -= 2 * levelDiff;
-    if ("permanentlyUpgradeRandomCardsInDeck" in downgradedCard) downgradedCard.permanentlyUpgradeRandomCardsInDeck -= 1 * levelDiff;
-    if ("permanentlyUpgradeRandomCardsInHand" in downgradedCard) downgradedCard.permanentlyUpgradeRandomCardsInHand -= 1 * levelDiff;
-    if ("cardDraw" in downgradedCard) downgradedCard.cardDraw -= 1 * levelDiff;
-    if ("inkAdd" in downgradedCard) downgradedCard.inkAdd -= 1 * levelDiff;
-    if ("healthCost" in downgradedCard) downgradedCard.healthCost += 1 * levelDiff;
-
-    // Reduce inkCost if it was increased on upgrade
+    if ("goldAddPerCardInDeck" in downgradedCard) {
+      downgradedCard.goldAddPerCardInDeck = Math.max(0.5, downgradedCard.goldAddPerCardInDeck - 0.5 * levelDiff);
+    }
+    if ("permanentlyUpgradeRandomCardsInDeck" in downgradedCard) downgradedCard.permanentlyUpgradeRandomCardsInDeck -= levelDiff;
+    if ("permanentlyUpgradeRandomCardsInHand" in downgradedCard) downgradedCard.permanentlyUpgradeRandomCardsInHand -= levelDiff;
+    if ("cardDraw" in downgradedCard) downgradedCard.cardDraw -= levelDiff;
+    if ("inkAdd" in downgradedCard) downgradedCard.inkAdd -= levelDiff;
+    if ("healthCost" in downgradedCard) downgradedCard.healthCost += levelDiff;
+    if ("heal" in downgradedCard) downgradedCard.heal = Math.max(1, downgradedCard.heal - 5 * levelDiff);
+    if ("healPerCardInDeck" in downgradedCard) {
+      downgradedCard.healPerCardInDeck = Math.max(0.5, downgradedCard.healPerCardInDeck - 0.5 * levelDiff);
+    }
+    if ("weakenEnemyHpPercent" in downgradedCard) {
+      downgradedCard.weakenEnemyHpPercent = Math.max(0.1, downgradedCard.weakenEnemyHpPercent - 0.05 * levelDiff);
+    }
     if ("inkCostIncreasePerLevel" in downgradedCard && typeof downgradedCard.inkCost === "number") {
       downgradedCard.inkCost -= downgradedCard.inkCostIncreasePerLevel * levelDiff;
     }
-
-    // Halve base damage if upgraded by multiplier
     if ("damageMultiplierPerLevel" in downgradedCard && typeof downgradedCard.damage === "number") {
       downgradedCard.damage = Math.ceil(downgradedCard.damage / Math.pow(downgradedCard.damageMultiplierPerLevel, levelDiff));
     }
-
-    // Reduce damageRoll values
     if (downgradedCard.damageRoll) {
       downgradedCard.damageRoll = _objectSpread(_objectSpread({}, downgradedCard.damageRoll), {}, {
         dice: Math.max(1, downgradedCard.damageRoll.dice - levelDiff),
@@ -2479,14 +2563,8 @@ function downgradeCard(card) {
       });
     }
   }
-
-  // Update upgrade level
   downgradedCard.upgrades = newLevel;
-
-  // === Smart renaming ===
-  var baseName = card.name.replace(/\s\+\d+$/, "") // remove trailing "+3"
-  .replace(/\s\d+d\d+(\s?\+\d+)?$/, ""); // remove "3d6" or "3d6 +3"
-
+  var baseName = card.name.replace(/\s\+\d+$/, "").replace(/\s\d+d\d+(\s?\+\d+)?$/, "");
   if (downgradedCard.damageRoll) {
     var _downgradedCard$damag = downgradedCard.damageRoll,
       _downgradedCard$damag2 = _downgradedCard$damag.dice,
@@ -2587,6 +2665,10 @@ function socketCardWithGem(card, gem) {
   if ("cardDraw" in gem) applyEffect("cardDraw", gem.cardDraw, 1);
   if ("inkAdd" in gem) applyEffect("inkAdd", gem.inkAdd, 1);
   if ("healthCost" in gem) applyEffect("healthCost", gem.healthCost, -1);
+  if ("heal" in gem) applyEffect("heal", gem.heal, 5);
+  if ("weakenEnemyHpPercent" in gem) {
+    socketedCard.weakenEnemyHpPercent = (socketedCard.weakenEnemyHpPercent || 0) + gem.weakenEnemyHpPercent;
+  }
 
   // === Add upgradesOnCast property ===
   if ("upgradesOnCast" in gem) {
@@ -2685,7 +2767,7 @@ function checkRelicTriggers(state, triggerEvent) {
   var updatedState = _objectSpread({}, state);
   var result = context.payload || null;
 
-  // Special case: handle only the new relic when a relic is picked up
+  // === Special case: Relic is being picked up ===
   if (triggerEvent === TRIGGER_EVENTS.RELIC_PICKUP && context.relic) {
     var _relic$triggers, _updatedState$offerin;
     var relic = context.relic;
@@ -2708,69 +2790,48 @@ function checkRelicTriggers(state, triggerEvent) {
         return card;
       });
       if (modifiedCount > 0) {
-        updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-          log: ["".concat(relic.name, " reduced the ink cost of ").concat(modifiedCount, " fire card(s) in your deck.")].concat(_toConsumableArray(updatedState.log))
-        });
+        updatedState.log.unshift("".concat(relic.name, " reduced the ink cost of ").concat(modifiedCount, " fire card(s) in your deck."));
       }
     }
     if (effect.bonusPages) {
       campaign.pages += effect.bonusPages;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " gave you +").concat(effect.bonusPages, " max pages.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusPages, " max pages."));
     }
     if (effect.BonusMulligans) {
       var _campaign$mulligans;
       campaign.mulligans = ((_campaign$mulligans = campaign.mulligans) !== null && _campaign$mulligans !== void 0 ? _campaign$mulligans : 0) + effect.BonusMulligans;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " gave you +").concat(effect.BonusMulligans, " mulligan.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.BonusMulligans, " mulligan."));
     }
     if (effect.bonusInk) {
       campaign.ink += effect.bonusInk;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " gave you +").concat(effect.bonusInk, " max ink.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusInk, " max ink."));
     }
     if (effect.bonusBooks) {
       campaign.books += effect.bonusBooks;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " gave you +").concat(effect.bonusBooks, " max books.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusBooks, " max books."));
     }
     if (effect.bonusHandSize) {
       campaign.handSize += effect.bonusHandSize;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " increased your hand size by ").concat(effect.bonusHandSize, ".")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " increased your hand size by ").concat(effect.bonusHandSize, "."));
     }
     if (effect.bonusHealth) {
       newHealth += effect.bonusHealth;
       newMaxHealth += effect.bonusHealth;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " increased your max health by ").concat(effect.bonusHealth, " HP.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " increased your max health by ").concat(effect.bonusHealth, " HP."));
     }
     if (effect.bonusGold) {
       updatedState = gainGold(updatedState, effect.bonusGold);
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " gave you ").concat(effect.bonusGold, " gold.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " gave you ").concat(effect.bonusGold, " gold."));
     }
     if (effect.bonusBaseBunnies) {
       updatedState = increaseBaseBunnies(updatedState, effect.bonusBaseBunnies);
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " added ").concat(effect.bonusBaseBunnies, " base bunnies.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.log.unshift("".concat(relic.name, " added ").concat(effect.bonusBaseBunnies, " base bunnies."));
     }
     if (effect.permanentlyUpgradeRandomCardsInDeck > 0) {
       var deck = campaign.deck;
       var numToUpgrade = Math.min(effect.permanentlyUpgradeRandomCardsInDeck, deck.length);
-      var upgradedDeck = permanentlyUpgradeRandomCardsInDeck(deck, numToUpgrade);
-      campaign.deck = upgradedDeck;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["".concat(relic.name, " permanently upgraded ").concat(numToUpgrade, " card(s) in your deck.")].concat(_toConsumableArray(updatedState.log))
-      });
+      campaign.deck = permanentlyUpgradeRandomCardsInDeck(deck, numToUpgrade);
+      updatedState.log.unshift("".concat(relic.name, " permanently upgraded ").concat(numToUpgrade, " card(s) in your deck."));
     }
     if (effect.shopPriceMultiplier && state.currentPhase === PHASES.SHOP && (_updatedState$offerin = updatedState.offerings) !== null && _updatedState$offerin !== void 0 && _updatedState$offerin.shopfront) {
       var newMultiplier = getShopPriceMultiplier(updatedState);
@@ -2803,12 +2864,8 @@ function checkRelicTriggers(state, triggerEvent) {
           })
         });
       });
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        offerings: _objectSpread(_objectSpread({}, updatedState.offerings), {}, {
-          shopfront: updatedShopfront
-        }),
-        log: ["".concat(relic.name, " triggered and updated shop prices.")].concat(_toConsumableArray(updatedState.log))
-      });
+      updatedState.offerings.shopfront = updatedShopfront;
+      updatedState.log.unshift("".concat(relic.name, " triggered and updated shop prices."));
     }
     updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
       campaign: campaign,
@@ -2820,24 +2877,75 @@ function checkRelicTriggers(state, triggerEvent) {
     });
   }
 
-  // All other trigger types still loop through relics in relicBelt
+  // === General case: loop through all relics and handle triggers ===
   var _iterator4 = _createForOfIteratorHelper(updatedState.relicBelt),
     _step4;
   try {
     for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
       var _relic$triggers2;
       var _relic = _step4.value;
+      if (!_relic.triggers || _typeof(_relic.triggers) !== "object") continue;
+      var allTriggerKeys = Object.keys(_relic.triggers);
       var _effect = (_relic$triggers2 = _relic.triggers) === null || _relic$triggers2 === void 0 ? void 0 : _relic$triggers2[triggerEvent];
+
+      // console.log(
+      //   `🧪 Checking ${relic.name}...`,
+      //   "\n- Looking for trigger:",
+      //   triggerEvent,
+      //   "\n- Available triggers:",
+      //   allTriggerKeys,
+      //   "\n- Effect found:",
+      //   effect
+      // );
+
       if (!_effect) continue;
-      if (_effect.bunnyAdd) {
-        var amount = _effect.bunnyAdd;
-        updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-          combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-            bunnies: (updatedState.combat.bunnies || 0) + amount
-          }),
-          log: ["".concat(_relic.name, " summoned ").concat(amount, " bunny").concat(amount === 1 ? "" : "ies", "!")].concat(_toConsumableArray(updatedState.log))
-        });
+      if (triggerEvent === TRIGGER_EVENTS.COMBAT_START && _effect.weakenEnemyHpPercent > 0) {
+        updatedState = weakenEnemyByPercent(updatedState, _effect.weakenEnemyHpPercent);
+        updatedState.log.unshift("".concat(_relic.name, " weakened the enemy by ").concat(_effect.weakenEnemyHpPercent * 100, "%!"));
       }
+      if (_effect.bunnyAdd) {
+        updatedState.combat = _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          bunnies: (updatedState.combat.bunnies || 0) + _effect.bunnyAdd
+        });
+        updatedState.log.unshift("".concat(_relic.name, " summoned ").concat(_effect.bunnyAdd, " bunny").concat(_effect.bunnyAdd === 1 ? "" : "ies", "!"));
+      }
+      if (_effect.permanentlyUpgradeRandomCardsInDeck > 0) {
+        var _campaign = _objectSpread({}, updatedState.campaign);
+        var _deck = _campaign.deck;
+        var _numToUpgrade = Math.min(_effect.permanentlyUpgradeRandomCardsInDeck, _deck.length);
+        _campaign.deck = permanentlyUpgradeRandomCardsInDeck(_deck, _numToUpgrade);
+        updatedState.campaign = _campaign;
+        updatedState.log.unshift("".concat(_relic.name, " permanently upgraded ").concat(_numToUpgrade, " card(s) in your deck."));
+      }
+
+      // === Support for Whetstone ===
+      if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP && _effect.upgradeCard) {
+        var cardToUpgrade = context.card || context.payload;
+        if (cardToUpgrade) {
+          console.log("\uD83E\uDE93 ".concat(_relic.name, " is upgrading a picked-up card: ").concat(cardToUpgrade.name));
+          var upgraded = upgradeCard(cardToUpgrade, 1);
+          updatedState.log.unshift("".concat(_relic.name, " upgraded ").concat(cardToUpgrade.name, " into ").concat(upgraded.name, "."));
+          result = upgraded;
+        } else {
+          console.warn("\u26A0\uFE0F ".concat(_relic.name, " triggered upgradeCard but no card was provided."));
+        }
+      }
+
+      // === Support for Porcelain Koi ===
+      if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP) {
+        var pickedCard = context.card || context.payload;
+        if (_effect.bonusHealth) {
+          updatedState.health += _effect.bonusHealth;
+          updatedState.maxHealth += _effect.bonusHealth;
+          updatedState.log.unshift("".concat(_relic.name, " increased your max health by ").concat(_effect.bonusHealth).concat(pickedCard !== null && pickedCard !== void 0 && pickedCard.name ? " (from picking ".concat(pickedCard.name, ")") : "", "."));
+        }
+        if (_effect.bonusGold) {
+          updatedState = gainGold(updatedState, _effect.bonusGold);
+          updatedState.log.unshift("".concat(_relic.name, " granted you ").concat(_effect.bonusGold, " gold").concat(pickedCard !== null && pickedCard !== void 0 && pickedCard.name ? " (from picking ".concat(pickedCard.name, ")") : "", "."));
+        }
+      }
+
+      // === Add additional relic effects here ===
     }
   } catch (err) {
     _iterator4.e(err);
@@ -3163,7 +3271,19 @@ function generateEnemy(state, path) {
   var vegetables = ["carrot", "broccoli", "spinach", "kale", "zucchini", "eggplant", "cauliflower", "cabbage", "lettuce", "beet", "radish", "turnip", "bokchoi", "chilli", "nopal", "durian", "bean", "yam", "tomato", "asparagus", "potato", "pumpkin", "bellpepper", "celery", "onion"];
   var bossNames = ["Avatar of the Weasel", "Fox Spirit", "Beaglesoul"];
   if (isBoss) {
-    name = bossNames[Math.floor(Math.random() * bossNames.length)];
+    var _state$defeatedEnemie3;
+    var defeated = (_state$defeatedEnemie3 = state.defeatedEnemies) !== null && _state$defeatedEnemie3 !== void 0 ? _state$defeatedEnemie3 : [];
+
+    // Filter out bosses that have already been defeated
+    var remainingBosses = bossNames.filter(function (boss) {
+      return !defeated.includes(boss);
+    });
+    if (remainingBosses.length === 0) {
+      console.warn("All bosses have already been defeated!");
+      name = "???"; // or throw an error or return null or fallback enemy
+    } else {
+      name = remainingBosses[Math.floor(Math.random() * remainingBosses.length)];
+    }
   } else {
     // Base monster type
     var monsterList;
@@ -4350,8 +4470,8 @@ function drawCard(state) {
     combat: _objectSpread(_objectSpread({}, currentCombat), {}, {
       deck: remainingDeck,
       hand: [].concat(_toConsumableArray(currentCombat.hand), [drawnCard])
-    }),
-    log: ["\uD83D\uDCDC Drew card: ".concat(drawnCard.name)].concat(_toConsumableArray(updatedState.log))
+    })
+    // log: [`📜 Drew card: ${drawnCard.name}`, ...updatedState.log],
   });
   updatedState = checkRelicTriggers(updatedState, TRIGGER_EVENTS.DRAW_CARD);
   updatedState = checkCardTriggers(updatedState, drawnCard, TRIGGER_EVENTS.DRAW_CARD);
@@ -4592,6 +4712,39 @@ function resolveSpell(state, card) {
     effects.push("+".concat(card.bunnyAdd, " bunn").concat(card.bunnyAdd === 1 ? "y" : "ies"));
   }
 
+  // === Bunny Add Based on Deck Size Multiplier ===
+  if (typeof card.bunnyAddPerCardInDeck === "number") {
+    var multiplier = card.bunnyAddPerCardInDeck;
+    var deckSize = updatedState.campaign.deck.length;
+    var bunnyAmount = Math.floor(deckSize * multiplier);
+    if (bunnyAmount > 0) {
+      updatedState = addBunnies(updatedState, bunnyAmount);
+      effects.push("+".concat(bunnyAmount, " bunnies (").concat(multiplier, "\xD7 deck size)"));
+    }
+  }
+
+  // === Gain Gold Based on Deck Size Multiplier ===
+  if (typeof card.goldAddPerCardInDeck === "number") {
+    var _multiplier = card.goldAddPerCardInDeck;
+    var _deckSize = updatedState.campaign.deck.length;
+    var goldAmount = Math.floor(_deckSize * _multiplier);
+    if (goldAmount > 0) {
+      updatedState = gainGold(updatedState, goldAmount);
+      effects.push("+".concat(goldAmount, " gold (").concat(_multiplier, "\xD7 deck size)"));
+    }
+  }
+
+  // === Heal Based on Deck Size Multiplier ===
+  if (card.healPerCardInDeck) {
+    var _multiplier2 = card.healPerCardInDeck;
+    var _deckSize2 = updatedState.campaign.deck.length;
+    var healAmount = Math.floor(_deckSize2 * _multiplier2);
+    if (healAmount > 0) {
+      updatedState = heal(updatedState, healAmount);
+      effects.push("+".concat(healAmount, " HP (").concat(_multiplier2, "\xD7 deck size)"));
+    }
+  }
+
   // === Bunny Multiply ===
   if (card.bunnyMult) {
     updatedState = multiplyBunnies(updatedState, card.bunnyMult);
@@ -4628,6 +4781,12 @@ function resolveSpell(state, card) {
     effects.push("-".concat(card.healthCost, " HP"));
   }
 
+  // === Heal ===
+  if (card.heal) {
+    updatedState = heal(updatedState, card.heal);
+    effects.push("+".concat(card.heal, " HP"));
+  }
+
   // === Permanently Upgrade Cards in Deck ===
   if (card.permanentlyUpgradeRandomCardsInDeck) {
     var numToUpgrade = Math.min(card.permanentlyUpgradeRandomCardsInDeck, updatedState.campaign.deck.length);
@@ -4642,14 +4801,28 @@ function resolveSpell(state, card) {
 
   // === Permanently Upgrade Cards in Hand ===
   if (card.permanentlyUpgradeRandomCardsInHand) {
-    var _numToUpgrade = Math.min(card.permanentlyUpgradeRandomCardsInHand, updatedState.combat.hand.length);
-    var upgradedHand = permanentlyUpgradeRandomCardsInDeck(updatedState.combat.hand, _numToUpgrade);
+    var _numToUpgrade2 = Math.min(card.permanentlyUpgradeRandomCardsInHand, updatedState.combat.hand.length);
+    var upgradedHand = permanentlyUpgradeRandomCardsInDeck(updatedState.combat.hand, _numToUpgrade2);
     updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
       combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
         hand: upgradedHand
       })
     });
-    effects.push("Upgraded ".concat(_numToUpgrade, " card(s) in hand"));
+    effects.push("Upgraded ".concat(_numToUpgrade2, " card(s) in hand"));
+  }
+
+  // === Weaken Enemy by Percent (e.g., Poison)
+  if (card.weakenEnemyHpPercent > 0) {
+    var _updatedState$combat$;
+    var percent = card.weakenEnemyHpPercent;
+    var baseHp = ((_updatedState$combat$ = updatedState.combat.enemy) === null || _updatedState$combat$ === void 0 ? void 0 : _updatedState$combat$.hp) || 0;
+    var poisonDamage = Math.floor(baseHp * percent);
+    if (poisonDamage > 0) {
+      updatedState = dealDamage(updatedState, poisonDamage, [DAMAGE_TYPES.POISON], {
+        isBonus: true
+      });
+      effects.push("Dealt ".concat(poisonDamage, " poison damage (max HP % effect)"));
+    }
   }
 
   // === Flat Damage ===
@@ -4724,46 +4897,58 @@ function combatEnd(state) {
 
   // === Handle victory
   if (victory) {
-    var _updatedState$combat$, _enemy$loot, _updatedState$defeate;
-    var rewards = [].concat(_toConsumableArray((_updatedState$combat$ = updatedState.combat.rewards) !== null && _updatedState$combat$ !== void 0 ? _updatedState$combat$ : []), _toConsumableArray((_enemy$loot = enemy === null || enemy === void 0 ? void 0 : enemy.loot) !== null && _enemy$loot !== void 0 ? _enemy$loot : []));
+    var _updatedState$combat$2, _enemy$loot, _updatedState$defeate;
+    var rewards = [].concat(_toConsumableArray((_updatedState$combat$2 = updatedState.combat.rewards) !== null && _updatedState$combat$2 !== void 0 ? _updatedState$combat$2 : []), _toConsumableArray((_enemy$loot = enemy === null || enemy === void 0 ? void 0 : enemy.loot) !== null && _enemy$loot !== void 0 ? _enemy$loot : []));
+    var defeatedEnemies = [].concat(_toConsumableArray((_updatedState$defeate = updatedState.defeatedEnemies) !== null && _updatedState$defeate !== void 0 ? _updatedState$defeate : []), [enemy]);
     if (enemy !== null && enemy !== void 0 && enemy.isBoss) {
       var _updatedState$stage;
       var bossRelic = getRandomBossRelic();
       if (bossRelic) rewards.push(bossRelic);
-
-      // ✅ Increase stage when defeating a boss
-      updatedState.stage = ((_updatedState$stage = updatedState.stage) !== null && _updatedState$stage !== void 0 ? _updatedState$stage : 0) + 1;
+      var newStage = ((_updatedState$stage = updatedState.stage) !== null && _updatedState$stage !== void 0 ? _updatedState$stage : 0) + 1;
       updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["\uD83C\uDFC6 You defeated a boss! Stage increased to ".concat(updatedState.stage, ".")].concat(_toConsumableArray(updatedState.log))
+        stage: newStage,
+        log: ["\uD83C\uDFC6 You defeated a boss! Stage increased to ".concat(newStage, ".")].concat(_toConsumableArray(updatedState.log))
       });
     }
-    var defeatedEnemies = [].concat(_toConsumableArray((_updatedState$defeate = updatedState.defeatedEnemies) !== null && _updatedState$defeate !== void 0 ? _updatedState$defeate : []), [enemy]);
     updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-      defeatedEnemies: defeatedEnemies,
-      offerings: _objectSpread(_objectSpread({}, updatedState.offerings), {}, {
-        combatRewards: rewards
-      })
+      defeatedEnemies: defeatedEnemies
     });
+    console.log("[DEBUG] Boss defeated, checking for game over. Stage =", updatedState.stage);
+
+    // 🧠 Check if the game is over BEFORE assigning rewards
     updatedState = checkGameOver(updatedState);
-  } else {
-    var _updatedState$combat$2, _updatedState$combat4;
-    // === Handle defeat: take damage equal to enemy's remaining HP
-    var remainingEnemyHp = (_updatedState$combat$2 = (_updatedState$combat4 = updatedState.combat) === null || _updatedState$combat4 === void 0 ? void 0 : _updatedState$combat4.enemyHp) !== null && _updatedState$combat$2 !== void 0 ? _updatedState$combat$2 : 0;
-    if (remainingEnemyHp > 0) {
-      var _enemy$name;
-      updatedState = takeDamage(updatedState, remainingEnemyHp, {
-        skipDeathCheck: true
-      });
+    if (!updatedState.gameOverResult) {
       updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["\u2620\uFE0F You were defeated by ".concat((_enemy$name = enemy === null || enemy === void 0 ? void 0 : enemy.name) !== null && _enemy$name !== void 0 ? _enemy$name : "the enemy", " and took ").concat(remainingEnemyHp, " damage.")].concat(_toConsumableArray(updatedState.log))
+        offerings: _objectSpread(_objectSpread({}, updatedState.offerings), {}, {
+          combatRewards: rewards
+        })
+      });
+    }
+  } else {
+    var _updatedState$combat$3, _updatedState$combat4;
+    // === Handle defeat
+    var remainingEnemyHp = (_updatedState$combat$3 = (_updatedState$combat4 = updatedState.combat) === null || _updatedState$combat4 === void 0 || (_updatedState$combat4 = _updatedState$combat4.enemy) === null || _updatedState$combat4 === void 0 ? void 0 : _updatedState$combat4.hp) !== null && _updatedState$combat$3 !== void 0 ? _updatedState$combat$3 : 0;
+    if (enemy !== null && enemy !== void 0 && enemy.isBoss) {
+      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+        gameOverResult: "loss",
+        log: ["\u2620\uFE0F You were defeated by the boss ".concat(enemy.name, ". Your journey ends here.")].concat(_toConsumableArray(updatedState.log))
       });
     } else {
-      var _enemy$name2;
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        log: ["\u2620\uFE0F You were defeated by ".concat((_enemy$name2 = enemy === null || enemy === void 0 ? void 0 : enemy.name) !== null && _enemy$name2 !== void 0 ? _enemy$name2 : "the enemy.")].concat(_toConsumableArray(updatedState.log))
-      });
+      if (remainingEnemyHp > 0) {
+        var _enemy$name;
+        updatedState = takeDamage(updatedState, remainingEnemyHp); // no skipDeathCheck
+        updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+          log: ["\u2620\uFE0F You were defeated by ".concat((_enemy$name = enemy === null || enemy === void 0 ? void 0 : enemy.name) !== null && _enemy$name !== void 0 ? _enemy$name : "the enemy", " and took ").concat(remainingEnemyHp, " damage.")].concat(_toConsumableArray(updatedState.log))
+        });
+      } else {
+        var _enemy$name2;
+        updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+          log: ["\u2620\uFE0F You were defeated by ".concat((_enemy$name2 = enemy === null || enemy === void 0 ? void 0 : enemy.name) !== null && _enemy$name2 !== void 0 ? _enemy$name2 : "the enemy.")].concat(_toConsumableArray(updatedState.log))
+        });
+      }
+      console.log("[DEBUG] Player defeated. Health:", updatedState.health);
+      updatedState = checkGameOver(updatedState);
     }
-    updatedState = checkGameOver(updatedState);
   }
 
   // === Clean up combat state
@@ -4778,6 +4963,7 @@ function combatEnd(state) {
   var finalState = _objectSpread(_objectSpread({}, updatedState), {}, {
     combat: cleanedCombat
   });
+  console.log("[DEBUG] Final combatEnd state. Game over?", finalState.gameOverResult);
   if (finalState.gameOverResult) {
     finalState = advancePhaseTo(finalState, PHASES.GAME_OVER);
     finalState = _objectSpread(_objectSpread({}, finalState), {}, {
@@ -4808,6 +4994,7 @@ function checkGameOver(state) {
   var defeatedBosses = (state.defeatedEnemies || []).filter(function (enemy) {
     return enemy.isBoss;
   }).length;
+  console.log("[DEBUG] checkGameOver called. Health:", state.health, "Bosses defeated:", defeatedBosses);
   if (playerDead) {
     return _objectSpread(_objectSpread({}, state), {}, {
       gameOverResult: "loss"
@@ -4900,6 +5087,22 @@ function mulligan(state) {
   }
   return updatedState;
 }
+function weakenEnemyByPercent(state, percent) {
+  var _state$combat11;
+  if (!(state !== null && state !== void 0 && (_state$combat11 = state.combat) !== null && _state$combat11 !== void 0 && _state$combat11.enemy) || typeof state.combat.enemy.hp !== "number" || percent <= 0) {
+    console.warn("Invalid state or percent passed to weakenEnemyByPercent.");
+    return state;
+  }
+  var enemyMaxHp = state.combat.enemy.hp;
+  var damage = Math.floor(enemyMaxHp * percent);
+  if (damage <= 0) {
+    console.log("No damage dealt by weakenEnemyByPercent (percent = ".concat(percent, ")."));
+    return state;
+  }
+  return dealDamage(state, damage, [], {
+    isBonus: true
+  });
+}
 
 //current bugs/fixes/additions.
 
@@ -4909,30 +5112,71 @@ function mulligan(state) {
 //bug with socketing naming (or at least displaying) - eg., Amber Bunnymancy +1 2d5+1 (checkinspect deck render as well as the naming logic, error could be in either place)
 // same bug in card offerings too?
 
-// crystal ball triggers when we start path selection (??????)
-// planetarium mobile doesn't work.
-// same boss can appear twice.
-// stage is not advancing.
-// game continues past level 46. (Should end when 3rd boss is defeated.)
-// discount voucher doesn't actually work when bought in the shop. It should simply be unavailable in the shop (easiest fix)
+//losing to bosses doesn't end the game STILL.
+//stages still don't increment properly on boss defeat OR they're not being accessed correctly when assinging enemy hp and abilities.
 
-//losing to bosses does't make you lose the game (it should, but it doesn't).
+//firemages hat doesnt work
+// toothfairy's charm doesnt work.
+//undefined paths spawning again (likely the shop bug) - 💰 Replaced SHOP with undefined because player has < 100 gold.
+
+//death causes an infinite loop:
+// combatEnd	@	main.js:5614
+// checkCombatEndViaDeath	@	main.js:4992
+// takeDamage	@	main.js:5110
+// combatEnd	@	main.js:5614
+// checkCombatEndViaDeath	@	main.js:4992
+// takeDamage	@	main.js:5110
+// combatEnd	@	main.js:5614
+// checkCombatEndViaDeath	@	main.js:4992
+// takeDamage	@	main.js:5110
+// combatEnd	@	main.js:5614
+// main.js:4990 >>> Player is dead. Ending combat.
+// main.js:5538 >>> Entered combatEnd with context:
+// {}
+// main.js:3 Uncaught RangeError: Maximum call stack size exceeded
+//     at _objectSpread (main.js:3:1)
+//     at combatEnd (main.js:5544:19)
+//     at checkCombatEndViaDeath (main.js:4992:12)
+//     at takeDamage (main.js:5110:42)
+//     at combatEnd (main.js:5614:24)
+//     at checkCombatEndViaDeath (main.js:4992:12)
+//     at takeDamage (main.js:5110:42)
+//     at combatEnd (main.js:5614:24)
+//     at checkCombatEndViaDeath (main.js:4992:12)
+//     at takeDamage (main.js:5110:42)
+// main.js:4231 [Violation] 'click' handler took 1112ms
+//
 
 //expanding the game
 // a mythic gem that makes a spell cost 1 less ink, be an instant, and exile on cast.
+
 // implement "critical hit" mechanics; cards, gems, and relics, plus three 'critical hit matters' mythics - one that boosts crit amounts,  one that increases crit chance, and one that gives crits to everything.
+// a relic that gives the cast spellbook button +10% chance for a 200% crit.
+// a gem that gives the card a 10% chance for double effect on cast.
+
 // implement three boss abilties keyed to the boss name: 'downgrade all cards in enemy deck', '+1 ink cost to all enemy cards', and 'enemy loses 1 hp whenever they play a card'.
-// implement an enemy ablity that exiles 3 random cards from your deck at combat start, increment value 2. ("Milling")
-// implement an enemy ability that removes the 1 most-upgraded card in your deck ("Lobotomizing"), increment value 1.
-// a card that heals HP. (exiles on cast ofc)
+// IMPORTANT: implement an enemy ablity that exiles 3 random cards from your deck at combat start, increment value 2. ("Milling")
+// IMPORTANT: implement an enemy ability that removes the 1 most-upgraded card in your deck ("Lobotomizing"), increment value 1.
+
+// a potion that does (20+(10*upgrades))*(stage+1) damage.
+
+// enemies with resistances: X% bunny, X% lightning, X% fire, etc.
 
 //reward deck size mechanics:
-// a card that adds bunnies based on the #cards in the campaign deck. adds 1x campaign deck cards, each upgrade increases the mult by 1.
+// make mega bunniplication mult bunnies based on decksize.
+// make hand of midas add gold based on decksize.
+// make healing light heal based on decksize.
+// make rest mechanic heal 2x decksize.
+
 // a relic that on pickup gives you +HP based on the #cards in the campaign deck.
 // a relic that on pickup gives you +baseBunnies based on the #cards in the campaign deck.
+
 // a potion that heals based on the #cards in the campaign deck.
-// a card that grants gold based on the #cards in the campaign deck.
-// a card that heals bades on the #cards in the campaign deck.
+
+//structure & organization:
+// refactor into proper file management system - it's really getting too bloated.
+// reorganize properly during refactor.
+// ensure that all actions and game reducer elements are correctly named and traced on the whitelist.
 },{}],"../node_modules/parcel-bundler/src/builtins/hmr-runtime.js":[function(require,module,exports) {
 var global = arguments[3];
 var OVERLAY_ID = '__parcel__error__overlay__';
@@ -4958,7 +5202,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "51879" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "58602" + '/');
   ws.onmessage = function (event) {
     checkedAssets = {};
     assetsToAccept = [];
