@@ -537,20 +537,19 @@ const gemList = [
     rarity: RARITIES.RARE,
     damage: 5,
     damageTypes: [DAMAGE_TYPES.FIRE],
-    inkCostIncreasePerLevel: 1,
     damageMultiplierPerLevel: 2,
   },
-  {
-    name: "Amber",
-    rarity: RARITIES.MYTHIC,
-    damageRoll: {
-      dice: 1,
-      sides: 4,
-      flatBonus: 0,
-    },
-    upgradesOnCast: 1,
-    damageTypes: [DAMAGE_TYPES.LIGHTNING],
-  },
+  // {
+  //   name: "Amber",
+  //   rarity: RARITIES.MYTHIC,
+  //   damageRoll: {
+  //     dice: 1,
+  //     sides: 4,
+  //     flatBonus: 0,
+  //   },
+  //   upgradesOnCast: 1,
+  //   damageTypes: [DAMAGE_TYPES.LIGHTNING],
+  // },
   {
     name: "Moonstone",
     rarity: RARITIES.UNCOMMON,
@@ -596,7 +595,7 @@ const relicList = [
     rarity: RARITIES.COMMON,
     triggers: {
       [TRIGGER_EVENTS.RELIC_PICKUP]: {
-        bonusHealth: 50,
+        bonusHealth: 100,
       },
     },
   },
@@ -678,8 +677,8 @@ const relicList = [
     rarity: RARITIES.MYTHIC,
     triggers: {
       [TRIGGER_EVENTS.CARD_PICKUP]: {
-        bonusGold: 25,
-        bonusHealth: 25,
+        bonusGold: 5,
+        bonusHealth: 20,
       },
     },
   },
@@ -711,33 +710,33 @@ const relicList = [
   //     },
   //   },
   // },
-  {
-    name: "Sleeping Bag",
-    rarity: RARITIES.COMMON,
-    triggers: {
-      [TRIGGER_EVENTS.REST]: {
-        healPlayer: 50,
-      },
-    },
-  },
-  {
-    name: "Toothfairy's Charm",
-    rarity: RARITIES.COMMON,
-    triggers: {
-      [TRIGGER_EVENTS.REST]: {
-        goldAdd: 50,
-      },
-    },
-  },
-  {
-    name: "Planetarium Mobile",
-    rarity: RARITIES.UNCOMMON,
-    triggers: {
-      [TRIGGER_EVENTS.REST]: {
-        permanentlyUpgradeRandomCardsInDeck: 2, // upgrade random cards in the deck when resting
-      },
-    },
-  },
+  // {
+  //   name: "Sleeping Bag",
+  //   rarity: RARITIES.COMMON,
+  //   triggers: {
+  //     [TRIGGER_EVENTS.REST]: {
+  //       healPlayer: 50,
+  //     },
+  //   },
+  // },
+  // {
+  //   name: "Toothfairy's Charm",
+  //   rarity: RARITIES.COMMON,
+  //   triggers: {
+  //     [TRIGGER_EVENTS.REST]: {
+  //       goldAdd: 50,
+  //     },
+  //   },
+  // },
+  // {
+  //   name: "Planetarium Mobile",
+  //   rarity: RARITIES.UNCOMMON,
+  //   triggers: {
+  //     [TRIGGER_EVENTS.REST]: {
+  //       permanentlyUpgradeRandomCardsInDeck: 2, // upgrade random cards in the deck when resting
+  //     },
+  //   },
+  // },
   {
     name: "Dousing Rod",
     rarity: RARITIES.RARE,
@@ -816,7 +815,7 @@ const relicList = [
   {
     name: "Carrot Staff",
     rarity: RARITIES.MYTHIC,
-    description: "Doubles all Bunny damage you deal.",
+    description: "increases all Bunny damage you deal.",
     triggers: {
       [TRIGGER_EVENTS.DEAL_DAMAGE]: {
         damageTypeTrigger: DAMAGE_TYPES.BUNNY,
@@ -834,19 +833,19 @@ const relicList = [
       },
     },
   },
-  {
-    name: "Firemage's Hat",
-    rarity: RARITIES.MYTHIC,
-    description: "All Fire cards cost 1 less ink.",
-    triggers: {
-      [TRIGGER_EVENTS.RELIC_PICKUP]: {
-        reduceInkCostOfFireCardsInDeck: 1,
-      },
-      [TRIGGER_EVENTS.CARD_PICKUP]: {
-        reduceInkCostIfFire: 1,
-      },
-    },
-  },
+  // {
+  //   name: "Firemage's Hat",
+  //   rarity: RARITIES.MYTHIC,
+  //   description: "All Fire cards cost 1 less ink.",
+  //   triggers: {
+  //     [TRIGGER_EVENTS.RELIC_PICKUP]: {
+  //       reduceInkCostOfFireCardsInDeck: 1,
+  //     },
+  //     [TRIGGER_EVENTS.CARD_PICKUP]: {
+  //       reduceInkCostIfFire: 1,
+  //     },
+  //   },
+  // },
   {
     name: "Thinking Cap",
     rarity: RARITIES.MYTHIC,
@@ -1446,13 +1445,21 @@ function populatePathOfferings(state) {
       if (replacements.length > 0) {
         const replacement =
           replacements[Math.floor(Math.random() * replacements.length)];
-        finalPaths[shopIndex] = {
-          path: replacement,
-          ...pathMap[replacement],
-        };
-        console.log(
-          `💰 Replaced SHOP with ${replacement} because player has < 100 gold.`
-        );
+        const replacementData = pathMap[replacement];
+
+        if (replacementData) {
+          finalPaths[shopIndex] = {
+            path: replacement,
+            ...replacementData,
+          };
+          console.log(
+            `💰 Replaced SHOP with ${replacement} because player has < 100 gold.`
+          );
+        } else {
+          console.warn(
+            `⚠️ No data found in pathMap for replacement path: ${replacement}`
+          );
+        }
       }
     }
   }
@@ -1474,6 +1481,13 @@ function populatePathOfferings(state) {
   );
   const updatedPaths = triggerResult.result || finalPaths;
   const updatedState = { ...triggerResult };
+
+  // Final sanity check for undefineds
+  for (const path of updatedPaths) {
+    if (!path || !path.path) {
+      console.warn("⚠️ Invalid path in final offerings:", path);
+    }
+  }
 
   console.log("📍 Populating path offerings with:", updatedPaths);
   return {
@@ -3203,18 +3217,33 @@ function checkRelicTriggers(
     const allTriggerKeys = Object.keys(relic.triggers);
     const effect = relic.triggers?.[triggerEvent];
 
-    // console.log(
-    //   `🧪 Checking ${relic.name}...`,
-    //   "\n- Looking for trigger:",
-    //   triggerEvent,
-    //   "\n- Available triggers:",
-    //   allTriggerKeys,
-    //   "\n- Effect found:",
-    //   effect
-    // );
-
     if (!effect) continue;
 
+    // === Handle Lightning spell draw trigger
+    if (
+      triggerEvent === TRIGGER_EVENTS.PLAY_CARD &&
+      effect.ifLightningDrawCards > 0
+    ) {
+      const card = context.card || context.payload;
+      const isLightning =
+        Array.isArray(card?.damageTypes) &&
+        card.damageTypes.includes(DAMAGE_TYPES.LIGHTNING);
+
+      if (isLightning) {
+        updatedState.log.unshift(
+          `${relic.name} triggered and drew ${
+            effect.ifLightningDrawCards
+          } card${
+            effect.ifLightningDrawCards > 1 ? "s" : ""
+          } because you played a Lightning card!`
+        );
+        for (let i = 0; i < effect.ifLightningDrawCards; i++) {
+          updatedState = drawCard(updatedState);
+        }
+      }
+    }
+
+    // === Other trigger types
     if (
       triggerEvent === TRIGGER_EVENTS.COMBAT_START &&
       effect.weakenEnemyHpPercent > 0
@@ -3786,6 +3815,7 @@ function generateEnemy(state, path, modifyEnemyAbilityPower = null) {
     hp: Math.round(health),
     abilities,
     loot,
+    isBoss,
   };
 }
 
@@ -3823,6 +3853,7 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
     if (bossRelic) {
       loot.push({ type: "relic", value: bossRelic });
       usedTypes.add("relic"); // still prevents duplicate relic drops
+      drops--;
     } else {
       console.warn("No boss relics available in relicList!");
     }
@@ -5611,7 +5642,9 @@ function combatEnd(state, context = {}) {
       };
     } else {
       if (remainingEnemyHp > 0) {
-        updatedState = takeDamage(updatedState, remainingEnemyHp); // no skipDeathCheck
+        updatedState = takeDamage(updatedState, remainingEnemyHp, {
+          skipDeathCheck: true,
+        });
         updatedState = {
           ...updatedState,
           log: [
@@ -5841,46 +5874,13 @@ function weakenEnemyByPercent(state, percent) {
 
 //current bugs/fixes/additions.
 
-// if you start a new game after losing, it seems to carry on some of the previous game state. Make sure to completely clean the state.
-// game gets mega bugged if you continue to play after a defeat. Really double check the state cleanup.
-
 //bug with socketing naming (or at least displaying) - eg., Amber Bunnymancy +1 2d5+1 (checkinspect deck render as well as the naming logic, error could be in either place)
 // same bug in card offerings too?
 
-//losing to bosses doesn't end the game STILL.
-//stages still don't increment properly on boss defeat OR they're not being accessed correctly when assinging enemy hp and abilities.
+//unknown reward dropping from boss
+//possible bug between enchant fingertips and thunder cards
 
-//firemages hat doesnt work
-// toothfairy's charm doesnt work.
-//undefined paths spawning again (likely the shop bug) - 💰 Replaced SHOP with undefined because player has < 100 gold.
-
-//death causes an infinite loop:
-// combatEnd	@	main.js:5614
-// checkCombatEndViaDeath	@	main.js:4992
-// takeDamage	@	main.js:5110
-// combatEnd	@	main.js:5614
-// checkCombatEndViaDeath	@	main.js:4992
-// takeDamage	@	main.js:5110
-// combatEnd	@	main.js:5614
-// checkCombatEndViaDeath	@	main.js:4992
-// takeDamage	@	main.js:5110
-// combatEnd	@	main.js:5614
-// main.js:4990 >>> Player is dead. Ending combat.
-// main.js:5538 >>> Entered combatEnd with context:
-// {}
-// main.js:3 Uncaught RangeError: Maximum call stack size exceeded
-//     at _objectSpread (main.js:3:1)
-//     at combatEnd (main.js:5544:19)
-//     at checkCombatEndViaDeath (main.js:4992:12)
-//     at takeDamage (main.js:5110:42)
-//     at combatEnd (main.js:5614:24)
-//     at checkCombatEndViaDeath (main.js:4992:12)
-//     at takeDamage (main.js:5110:42)
-//     at combatEnd (main.js:5614:24)
-//     at checkCombatEndViaDeath (main.js:4992:12)
-//     at takeDamage (main.js:5110:42)
-// main.js:4231 [Violation] 'click' handler took 1112ms
-//
+//damage taken when losing comabt is too high.
 
 //expanding the game
 // a mythic gem that makes a spell cost 1 less ink, be an instant, and exile on cast.
@@ -5912,3 +5912,5 @@ function weakenEnemyByPercent(state, percent) {
 // refactor into proper file management system - it's really getting too bloated.
 // reorganize properly during refactor.
 // ensure that all actions and game reducer elements are correctly named and traced on the whitelist.
+
+//implement //firemages hat

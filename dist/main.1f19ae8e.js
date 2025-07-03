@@ -643,19 +643,20 @@ var gemList = [{
   rarity: RARITIES.RARE,
   damage: 5,
   damageTypes: [DAMAGE_TYPES.FIRE],
-  inkCostIncreasePerLevel: 1,
   damageMultiplierPerLevel: 2
-}, {
-  name: "Amber",
-  rarity: RARITIES.MYTHIC,
-  damageRoll: {
-    dice: 1,
-    sides: 4,
-    flatBonus: 0
-  },
-  upgradesOnCast: 1,
-  damageTypes: [DAMAGE_TYPES.LIGHTNING]
-}, {
+},
+// {
+//   name: "Amber",
+//   rarity: RARITIES.MYTHIC,
+//   damageRoll: {
+//     dice: 1,
+//     sides: 4,
+//     flatBonus: 0,
+//   },
+//   upgradesOnCast: 1,
+//   damageTypes: [DAMAGE_TYPES.LIGHTNING],
+// },
+{
   name: "Moonstone",
   rarity: RARITIES.UNCOMMON,
   heal: 10
@@ -692,7 +693,7 @@ var relicList = [{
   name: "Heartstone",
   rarity: RARITIES.COMMON,
   triggers: _defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
-    bonusHealth: 50
+    bonusHealth: 100
   })
 }, {
   name: "Cowbell",
@@ -755,8 +756,8 @@ var relicList = [{
   name: "Porcelain Koi",
   rarity: RARITIES.MYTHIC,
   triggers: _defineProperty({}, TRIGGER_EVENTS.CARD_PICKUP, {
-    bonusGold: 25,
-    bonusHealth: 25
+    bonusGold: 5,
+    bonusHealth: 20
   })
 }, {
   name: "Witch's Cauldron",
@@ -780,25 +781,34 @@ var relicList = [{
 //     },
 //   },
 // },
+// {
+//   name: "Sleeping Bag",
+//   rarity: RARITIES.COMMON,
+//   triggers: {
+//     [TRIGGER_EVENTS.REST]: {
+//       healPlayer: 50,
+//     },
+//   },
+// },
+// {
+//   name: "Toothfairy's Charm",
+//   rarity: RARITIES.COMMON,
+//   triggers: {
+//     [TRIGGER_EVENTS.REST]: {
+//       goldAdd: 50,
+//     },
+//   },
+// },
+// {
+//   name: "Planetarium Mobile",
+//   rarity: RARITIES.UNCOMMON,
+//   triggers: {
+//     [TRIGGER_EVENTS.REST]: {
+//       permanentlyUpgradeRandomCardsInDeck: 2, // upgrade random cards in the deck when resting
+//     },
+//   },
+// },
 {
-  name: "Sleeping Bag",
-  rarity: RARITIES.COMMON,
-  triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
-    healPlayer: 50
-  })
-}, {
-  name: "Toothfairy's Charm",
-  rarity: RARITIES.COMMON,
-  triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
-    goldAdd: 50
-  })
-}, {
-  name: "Planetarium Mobile",
-  rarity: RARITIES.UNCOMMON,
-  triggers: _defineProperty({}, TRIGGER_EVENTS.REST, {
-    permanentlyUpgradeRandomCardsInDeck: 2 // upgrade random cards in the deck when resting
-  })
-}, {
   name: "Dousing Rod",
   rarity: RARITIES.RARE,
   triggers: _defineProperty({}, TRIGGER_EVENTS.POPULATE_PATHS, {
@@ -852,7 +862,7 @@ var relicList = [{
 }, {
   name: "Carrot Staff",
   rarity: RARITIES.MYTHIC,
-  description: "Doubles all Bunny damage you deal.",
+  description: "increases all Bunny damage you deal.",
   triggers: _defineProperty({}, TRIGGER_EVENTS.DEAL_DAMAGE, {
     damageTypeTrigger: DAMAGE_TYPES.BUNNY,
     multiplyDamage: 1.5
@@ -864,16 +874,21 @@ var relicList = [{
   triggers: _defineProperty({}, TRIGGER_EVENTS.PLAY_CARD, {
     ifLightningDrawCards: 2
   })
-}, {
-  name: "Firemage's Hat",
-  rarity: RARITIES.MYTHIC,
-  description: "All Fire cards cost 1 less ink.",
-  triggers: _defineProperty(_defineProperty({}, TRIGGER_EVENTS.RELIC_PICKUP, {
-    reduceInkCostOfFireCardsInDeck: 1
-  }), TRIGGER_EVENTS.CARD_PICKUP, {
-    reduceInkCostIfFire: 1
-  })
-}, {
+},
+// {
+//   name: "Firemage's Hat",
+//   rarity: RARITIES.MYTHIC,
+//   description: "All Fire cards cost 1 less ink.",
+//   triggers: {
+//     [TRIGGER_EVENTS.RELIC_PICKUP]: {
+//       reduceInkCostOfFireCardsInDeck: 1,
+//     },
+//     [TRIGGER_EVENTS.CARD_PICKUP]: {
+//       reduceInkCostIfFire: 1,
+//     },
+//   },
+// },
+{
   name: "Thinking Cap",
   rarity: RARITIES.MYTHIC,
   description: "Your hand size is permanently increased by 3.",
@@ -1421,10 +1436,15 @@ function populatePathOfferings(state) {
       });
       if (replacements.length > 0) {
         var replacement = replacements[Math.floor(Math.random() * replacements.length)];
-        finalPaths[shopIndex] = _objectSpread({
-          path: replacement
-        }, pathMap[replacement]);
-        console.log("\uD83D\uDCB0 Replaced SHOP with ".concat(replacement, " because player has < 100 gold."));
+        var replacementData = pathMap[replacement];
+        if (replacementData) {
+          finalPaths[shopIndex] = _objectSpread({
+            path: replacement
+          }, replacementData);
+          console.log("\uD83D\uDCB0 Replaced SHOP with ".concat(replacement, " because player has < 100 gold."));
+        } else {
+          console.warn("\u26A0\uFE0F No data found in pathMap for replacement path: ".concat(replacement));
+        }
       }
     }
   }
@@ -1442,6 +1462,22 @@ function populatePathOfferings(state) {
   });
   var updatedPaths = triggerResult.result || finalPaths;
   var updatedState = _objectSpread({}, triggerResult);
+
+  // Final sanity check for undefineds
+  var _iterator3 = _createForOfIteratorHelper(updatedPaths),
+    _step3;
+  try {
+    for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
+      var path = _step3.value;
+      if (!path || !path.path) {
+        console.warn("⚠️ Invalid path in final offerings:", path);
+      }
+    }
+  } catch (err) {
+    _iterator3.e(err);
+  } finally {
+    _iterator3.f();
+  }
   console.log("📍 Populating path offerings with:", updatedPaths);
   return _objectSpread(_objectSpread({}, updatedState), {}, {
     misery: newMisery,
@@ -2695,19 +2731,19 @@ function socketCardWithGem(card, gem) {
   // === Merge damageTypes (if gem has them) ===
   if (Array.isArray(gem.damageTypes)) {
     socketedCard.damageTypes = Array.isArray(socketedCard.damageTypes) ? _toConsumableArray(socketedCard.damageTypes) : [];
-    var _iterator3 = _createForOfIteratorHelper(gem.damageTypes),
-      _step3;
+    var _iterator4 = _createForOfIteratorHelper(gem.damageTypes),
+      _step4;
     try {
-      for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
-        var dmgType = _step3.value;
+      for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
+        var dmgType = _step4.value;
         if (!socketedCard.damageTypes.includes(dmgType)) {
           socketedCard.damageTypes.push(dmgType);
         }
       }
     } catch (err) {
-      _iterator3.e(err);
+      _iterator4.e(err);
     } finally {
-      _iterator3.f();
+      _iterator4.f();
     }
   }
 
@@ -2878,27 +2914,30 @@ function checkRelicTriggers(state, triggerEvent) {
   }
 
   // === General case: loop through all relics and handle triggers ===
-  var _iterator4 = _createForOfIteratorHelper(updatedState.relicBelt),
-    _step4;
+  var _iterator5 = _createForOfIteratorHelper(updatedState.relicBelt),
+    _step5;
   try {
-    for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
+    for (_iterator5.s(); !(_step5 = _iterator5.n()).done;) {
       var _relic$triggers2;
-      var _relic = _step4.value;
+      var _relic = _step5.value;
       if (!_relic.triggers || _typeof(_relic.triggers) !== "object") continue;
       var allTriggerKeys = Object.keys(_relic.triggers);
       var _effect = (_relic$triggers2 = _relic.triggers) === null || _relic$triggers2 === void 0 ? void 0 : _relic$triggers2[triggerEvent];
-
-      // console.log(
-      //   `🧪 Checking ${relic.name}...`,
-      //   "\n- Looking for trigger:",
-      //   triggerEvent,
-      //   "\n- Available triggers:",
-      //   allTriggerKeys,
-      //   "\n- Effect found:",
-      //   effect
-      // );
-
       if (!_effect) continue;
+
+      // === Handle Lightning spell draw trigger
+      if (triggerEvent === TRIGGER_EVENTS.PLAY_CARD && _effect.ifLightningDrawCards > 0) {
+        var card = context.card || context.payload;
+        var isLightning = Array.isArray(card === null || card === void 0 ? void 0 : card.damageTypes) && card.damageTypes.includes(DAMAGE_TYPES.LIGHTNING);
+        if (isLightning) {
+          updatedState.log.unshift("".concat(_relic.name, " triggered and drew ").concat(_effect.ifLightningDrawCards, " card").concat(_effect.ifLightningDrawCards > 1 ? "s" : "", " because you played a Lightning card!"));
+          for (var i = 0; i < _effect.ifLightningDrawCards; i++) {
+            updatedState = drawCard(updatedState);
+          }
+        }
+      }
+
+      // === Other trigger types
       if (triggerEvent === TRIGGER_EVENTS.COMBAT_START && _effect.weakenEnemyHpPercent > 0) {
         updatedState = weakenEnemyByPercent(updatedState, _effect.weakenEnemyHpPercent);
         updatedState.log.unshift("".concat(_relic.name, " weakened the enemy by ").concat(_effect.weakenEnemyHpPercent * 100, "%!"));
@@ -2948,9 +2987,9 @@ function checkRelicTriggers(state, triggerEvent) {
       // === Add additional relic effects here ===
     }
   } catch (err) {
-    _iterator4.e(err);
+    _iterator5.e(err);
   } finally {
-    _iterator4.f();
+    _iterator5.f();
   }
   return _objectSpread(_objectSpread({}, updatedState), {}, {
     result: result
@@ -3231,12 +3270,12 @@ function generateEnemy(state, path) {
 
   // === Build abilities object ===
   var abilities = {};
-  var _iterator5 = _createForOfIteratorHelper(selectedAbilities),
-    _step5;
+  var _iterator6 = _createForOfIteratorHelper(selectedAbilities),
+    _step6;
   try {
-    for (_iterator5.s(); !(_step5 = _iterator5.n()).done;) {
+    for (_iterator6.s(); !(_step6 = _iterator6.n()).done;) {
       var _data$baseValue, _data$incrementValue, _state$stage3;
-      var key = _step5.value;
+      var key = _step6.value;
       var data = enemyAbilityDataMap[key];
       var baseValue = (_data$baseValue = data.baseValue) !== null && _data$baseValue !== void 0 ? _data$baseValue : 0;
       var _increment = (_data$incrementValue = data.incrementValue) !== null && _data$incrementValue !== void 0 ? _data$incrementValue : 0;
@@ -3260,9 +3299,9 @@ function generateEnemy(state, path) {
     }
     // === Name Generation ===
   } catch (err) {
-    _iterator5.e(err);
+    _iterator6.e(err);
   } finally {
-    _iterator5.f();
+    _iterator6.f();
   }
   var name;
   var smallMonsters = ["goblin", "kobold", "rat", "spider", "imp", "gremlin", "bat", "quasit", "skeleton", "zombie"];
@@ -3311,7 +3350,8 @@ function generateEnemy(state, path) {
     name: name,
     hp: Math.round(health),
     abilities: abilities,
-    loot: loot
+    loot: loot,
+    isBoss: isBoss
   };
 }
 function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
@@ -3350,6 +3390,7 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
         value: bossRelic
       });
       usedTypes.add("relic"); // still prevents duplicate relic drops
+      drops--;
     } else {
       console.warn("No boss relics available in relicList!");
     }
@@ -3370,13 +3411,13 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
     }, 0);
     var roll = Math.random() * totalWeight;
     var selected = void 0;
-    var _iterator6 = _createForOfIteratorHelper(available),
-      _step6;
+    var _iterator7 = _createForOfIteratorHelper(available),
+      _step7;
     try {
-      for (_iterator6.s(); !(_step6 = _iterator6.n()).done;) {
-        var _step6$value = _slicedToArray(_step6.value, 2),
-          type = _step6$value[0],
-          weight = _step6$value[1];
+      for (_iterator7.s(); !(_step7 = _iterator7.n()).done;) {
+        var _step7$value = _slicedToArray(_step7.value, 2),
+          type = _step7$value[0],
+          weight = _step7$value[1];
         if (roll < weight) {
           selected = type;
           break;
@@ -3384,9 +3425,9 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
         roll -= weight;
       }
     } catch (err) {
-      _iterator6.e(err);
+      _iterator7.e(err);
     } finally {
-      _iterator6.f();
+      _iterator7.f();
     }
     usedTypes.add(selected);
     if (selected === "gold") {
@@ -4536,11 +4577,11 @@ function dealDamage(state, damage) {
 
   // Only trigger relics if this isn't bonus damage
   if (!isBonus) {
-    var _iterator7 = _createForOfIteratorHelper(damageTypes),
-      _step7;
+    var _iterator8 = _createForOfIteratorHelper(damageTypes),
+      _step8;
     try {
-      for (_iterator7.s(); !(_step7 = _iterator7.n()).done;) {
-        var damageType = _step7.value;
+      for (_iterator8.s(); !(_step8 = _iterator8.n()).done;) {
+        var damageType = _step8.value;
         updatedState = checkRelicTriggers(updatedState, TRIGGER_EVENTS.DEAL_DAMAGE, {
           damageType: damageType,
           amount: damage,
@@ -4548,9 +4589,9 @@ function dealDamage(state, damage) {
         });
       }
     } catch (err) {
-      _iterator7.e(err);
+      _iterator8.e(err);
     } finally {
-      _iterator7.f();
+      _iterator8.f();
     }
   }
   updatedState = checkCombatEndViaDeath(updatedState);
@@ -4619,20 +4660,20 @@ function castSpellbook(state) {
   updatedState = checkRelicTriggers(updatedState, TRIGGER_EVENTS.CAST_SPELLBOOK);
 
   // 🔮 Cast each non-blank spell in the spellbook
-  var _iterator8 = _createForOfIteratorHelper(updatedState.combat.spellbook),
-    _step8;
+  var _iterator9 = _createForOfIteratorHelper(updatedState.combat.spellbook),
+    _step9;
   try {
-    for (_iterator8.s(); !(_step8 = _iterator8.n()).done;) {
-      var card = _step8.value;
+    for (_iterator9.s(); !(_step9 = _iterator9.n()).done;) {
+      var card = _step9.value;
       if (_typeof(card) !== "object" || card.name === "blank page") continue;
       updatedState = resolveSpell(updatedState, card);
     }
 
     // 🐇 Release bunnies (deal damage equal to bunny count)
   } catch (err) {
-    _iterator8.e(err);
+    _iterator9.e(err);
   } finally {
-    _iterator8.f();
+    _iterator9.f();
   }
   updatedState = releaseBunnies(updatedState);
 
@@ -4936,7 +4977,9 @@ function combatEnd(state) {
     } else {
       if (remainingEnemyHp > 0) {
         var _enemy$name;
-        updatedState = takeDamage(updatedState, remainingEnemyHp); // no skipDeathCheck
+        updatedState = takeDamage(updatedState, remainingEnemyHp, {
+          skipDeathCheck: true
+        });
         updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
           log: ["\u2620\uFE0F You were defeated by ".concat((_enemy$name = enemy === null || enemy === void 0 ? void 0 : enemy.name) !== null && _enemy$name !== void 0 ? _enemy$name : "the enemy", " and took ").concat(remainingEnemyHp, " damage.")].concat(_toConsumableArray(updatedState.log))
         });
@@ -5106,46 +5149,13 @@ function weakenEnemyByPercent(state, percent) {
 
 //current bugs/fixes/additions.
 
-// if you start a new game after losing, it seems to carry on some of the previous game state. Make sure to completely clean the state.
-// game gets mega bugged if you continue to play after a defeat. Really double check the state cleanup.
-
 //bug with socketing naming (or at least displaying) - eg., Amber Bunnymancy +1 2d5+1 (checkinspect deck render as well as the naming logic, error could be in either place)
 // same bug in card offerings too?
 
-//losing to bosses doesn't end the game STILL.
-//stages still don't increment properly on boss defeat OR they're not being accessed correctly when assinging enemy hp and abilities.
+//unknown reward dropping from boss
+//possible bug between enchant fingertips and thunder cards
 
-//firemages hat doesnt work
-// toothfairy's charm doesnt work.
-//undefined paths spawning again (likely the shop bug) - 💰 Replaced SHOP with undefined because player has < 100 gold.
-
-//death causes an infinite loop:
-// combatEnd	@	main.js:5614
-// checkCombatEndViaDeath	@	main.js:4992
-// takeDamage	@	main.js:5110
-// combatEnd	@	main.js:5614
-// checkCombatEndViaDeath	@	main.js:4992
-// takeDamage	@	main.js:5110
-// combatEnd	@	main.js:5614
-// checkCombatEndViaDeath	@	main.js:4992
-// takeDamage	@	main.js:5110
-// combatEnd	@	main.js:5614
-// main.js:4990 >>> Player is dead. Ending combat.
-// main.js:5538 >>> Entered combatEnd with context:
-// {}
-// main.js:3 Uncaught RangeError: Maximum call stack size exceeded
-//     at _objectSpread (main.js:3:1)
-//     at combatEnd (main.js:5544:19)
-//     at checkCombatEndViaDeath (main.js:4992:12)
-//     at takeDamage (main.js:5110:42)
-//     at combatEnd (main.js:5614:24)
-//     at checkCombatEndViaDeath (main.js:4992:12)
-//     at takeDamage (main.js:5110:42)
-//     at combatEnd (main.js:5614:24)
-//     at checkCombatEndViaDeath (main.js:4992:12)
-//     at takeDamage (main.js:5110:42)
-// main.js:4231 [Violation] 'click' handler took 1112ms
-//
+//damage taken when losing comabt is too high.
 
 //expanding the game
 // a mythic gem that makes a spell cost 1 less ink, be an instant, and exile on cast.
@@ -5177,6 +5187,8 @@ function weakenEnemyByPercent(state, percent) {
 // refactor into proper file management system - it's really getting too bloated.
 // reorganize properly during refactor.
 // ensure that all actions and game reducer elements are correctly named and traced on the whitelist.
+
+//implement //firemages hat
 },{}],"../node_modules/parcel-bundler/src/builtins/hmr-runtime.js":[function(require,module,exports) {
 var global = arguments[3];
 var OVERLAY_ID = '__parcel__error__overlay__';
@@ -5202,7 +5214,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "58602" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "56162" + '/');
   ws.onmessage = function (event) {
     checkedAssets = {};
     assetsToAccept = [];
