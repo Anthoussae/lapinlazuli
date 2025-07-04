@@ -595,7 +595,7 @@ const relicList = [
     rarity: RARITIES.COMMON,
     triggers: {
       [TRIGGER_EVENTS.RELIC_PICKUP]: {
-        bonusHealth: 100,
+        bonusHealth: 50,
       },
     },
   },
@@ -654,15 +654,15 @@ const relicList = [
   //     },
   //   },
   // },
-  {
-    name: "Gold Bag",
-    rarity: RARITIES.BASIC_POLY,
-    triggers: {
-      [TRIGGER_EVENTS.RELIC_PICKUP]: {
-        bonusGold: 25,
-      },
-    },
-  },
+  // {
+  //   name: "Gold Bag",
+  //   rarity: RARITIES.BASIC_POLY,
+  //   triggers: {
+  //     [TRIGGER_EVENTS.RELIC_PICKUP]: {
+  //       bonusGold: 25,
+  //     },
+  //   },
+  // },
   {
     name: "Whetstone",
     rarity: RARITIES.MYTHIC,
@@ -685,7 +685,7 @@ const relicList = [
 
   {
     name: "Witch's Cauldron",
-    rarity: RARITIES.UNCOMMON,
+    rarity: RARITIES.COMMON,
     triggers: {
       [TRIGGER_EVENTS.POTION_PICKUP]: {
         upgradePotion: true,
@@ -739,12 +739,13 @@ const relicList = [
   // },
   {
     name: "Dousing Rod",
-    rarity: RARITIES.RARE,
+    rarity: RARITIES.COMMON,
     triggers: {
       [TRIGGER_EVENTS.POPULATE_PATHS]: {
         revealAnonymousPaths: true,
       },
     },
+    nonDuplicable: true,
   },
   {
     name: "Gem of Weakness",
@@ -1036,6 +1037,12 @@ function anonymizeObject(obj) {
     ...obj,
     anonymousNameDisplay: true,
   };
+}
+function revealAnonymousPaths(paths) {
+  return paths.map((path) => {
+    const { anonymousNameDisplay, ...rest } = path;
+    return rest;
+  });
 }
 
 //#endregion
@@ -1467,19 +1474,25 @@ function populatePathOfferings(state) {
   // === Step 7: Randomly anonymize one path based on (50% - luck) chance
   const anonChance = Math.max(0, 0.5 - (state.luck || 0) * 0.01);
   const anonIndex = Math.floor(Math.random() * finalPaths.length);
+
+  let pathsAfterAnonymize = finalPaths;
+
   if (Math.random() < anonChance) {
-    finalPaths[anonIndex] = anonymizeObject(finalPaths[anonIndex]);
+    pathsAfterAnonymize = finalPaths.map((path, index) =>
+      index === anonIndex ? anonymizeObject(path) : path
+    );
   }
 
   // === Step 8: Apply relic triggers
   const triggerResult = checkRelicTriggers(
     state,
-    TRIGGER_EVENTS.POPULATE_PATH,
+    TRIGGER_EVENTS.POPULATE_PATHS,
     {
-      payload: finalPaths,
+      payload: pathsAfterAnonymize,
     }
   );
-  const updatedPaths = triggerResult.result || finalPaths;
+
+  const updatedPaths = triggerResult.result?.paths || pathsAfterAnonymize;
   const updatedState = { ...triggerResult };
 
   // Final sanity check for undefineds
@@ -2252,7 +2265,7 @@ function createInitialState() {
 
     maxHealth: 0,
     health: 0,
-    baseBunnies: 0,
+    baseBunnies: 10000,
 
     gold: 100,
 
@@ -2324,9 +2337,8 @@ function createGameApp(initialState, reducer, renderFn) {
   let state = initialState;
   function dispatch(action) {
     state = reducer(state, action);
-    renderFn(state, dispatch); // pass dispatch so buttons etc. can use it
+    renderFn(state, dispatch); // ✅ already correct
   }
-  // Start the game
   dispatch({ type: ACTIONS.NEW_GAME });
   return { dispatch };
 }
@@ -2424,18 +2436,24 @@ function generateRandomRelic(state, { rarity = null } = {}) {
     ...state.trashPile.map((r) => r.name),
   ]);
 
-  const GOLD_BAG = "Gold Bag";
+  const HEARTSTONE = "Heartstone";
 
-  // Exclude Gold Bag and duplicate high-rarity relics
+  // Exclude Heartstone and duplicate high-rarity relics, and respect non-duplicable relics
   let candidates = relicList.filter((r) => {
-    if (r.name === GOLD_BAG) return false;
-    if (r.bossOnly) return false; // ← new line to exclude boss-only relics from general pool
+    if (r.name === HEARTSTONE) return false;
+    if (r.bossOnly) return false;
+
+    // Exclude relics that shouldn't be duplicated
+    if (r.nonDuplicable && ownedRelics.has(r.name)) return false;
+
+    // Optional: still exclude duplicate Mythic/Legendary even if not marked
     if (
       (r.rarity === RARITIES.MYTHIC || r.rarity === RARITIES.LEGENDARY) &&
       ownedRelics.has(r.name)
     ) {
       return false;
     }
+
     return true;
   });
 
@@ -2447,7 +2465,7 @@ function generateRandomRelic(state, { rarity = null } = {}) {
   const filtered = candidates.filter((r) => r.rarity === rarity);
   if (filtered.length === 0) {
     console.warn(`No relics found for rarity: ${rarity}`);
-    return createRelicInstance(GOLD_BAG);
+    return createRelicInstance(HEARTSTONE);
   }
 
   const chosen = filtered[Math.floor(Math.random() * filtered.length)];
@@ -3056,6 +3074,15 @@ function checkRelicTriggers(
   let updatedState = { ...state };
   let result = context.payload || null;
 
+  if (!Array.isArray(state.relicBelt)) {
+    console.error("❌ relicBelt is not an array!", state.relicBelt);
+  } else {
+    console.log(
+      "👜 Current relic belt:",
+      state.relicBelt.map((r) => r.name || r)
+    );
+  }
+
   // === Special case: Relic is being picked up ===
   if (triggerEvent === TRIGGER_EVENTS.RELIC_PICKUP && context.relic) {
     const relic = context.relic;
@@ -3242,6 +3269,21 @@ function checkRelicTriggers(
         }
       }
     }
+    // potion pickup triggers
+    if (triggerEvent === TRIGGER_EVENTS.POTION_PICKUP && effect.upgradePotion) {
+      const potion = context.potion || context.payload;
+      if (potion) {
+        const upgraded = upgradePotion(potion, 1);
+        updatedState.log.unshift(
+          `${relic.name} upgraded ${potion.name} into ${upgraded.name}.`
+        );
+        result = upgraded;
+      } else {
+        console.warn(
+          `⚠️ ${relic.name} triggered upgradePotion but no potion provided.`
+        );
+      }
+    }
 
     // === Other trigger types
     if (
@@ -3302,6 +3344,18 @@ function checkRelicTriggers(
           `⚠️ ${relic.name} triggered upgradeCard but no card was provided.`
         );
       }
+    }
+
+    // === Support for Dousing Rod ===
+    if (
+      triggerEvent === TRIGGER_EVENTS.POPULATE_PATHS &&
+      effect.revealAnonymousPaths
+    ) {
+      const currentPaths = context.payload || [];
+      result = {
+        paths: revealAnonymousPaths(currentPaths),
+      };
+      updatedState.log.unshift(`${relic.name} revealed anonymous paths!`);
     }
 
     // === Support for Porcelain Koi ===
@@ -3818,7 +3872,6 @@ function generateEnemy(state, path, modifyEnemyAbilityPower = null) {
     isBoss,
   };
 }
-
 function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
   const luck = state.luck ?? 0;
   const level = state.level ?? 1;
@@ -3833,14 +3886,14 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
     gem: allGemmedOrUnsocketable ? 0 : 5 + luck + numAbilities * 4,
   };
 
-  let drops = isBoss ? 3 : 1;
+  let dropsRemaining = isBoss ? 3 : 1;
   if (!isBoss) {
     const chanceTwo = 50 + luck + numAbilities * 20;
     if (Math.random() * 100 < chanceTwo) {
-      drops++;
+      dropsRemaining++;
       const chanceThree = 35 + luck + numAbilities * 15;
       if (Math.random() * 100 < chanceThree) {
-        drops++;
+        dropsRemaining++;
       }
     }
   }
@@ -3848,23 +3901,36 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
   const usedTypes = new Set();
   const loot = [];
 
+  console.log("💥 Generating loot — boss:", isBoss, "drops:", dropsRemaining);
+
+  // === Guaranteed gold for bosses
   if (isBoss) {
+    const guaranteedGold = 100;
+    console.log("💰 Boss gold drop (guaranteed):", guaranteedGold);
+    loot.push({ type: "gold", value: guaranteedGold });
+
     const bossRelic = getRandomBossRelic();
-    if (bossRelic) {
+    if (bossRelic && bossRelic.name) {
+      console.log("🧿 Boss Relic drop:", bossRelic.name);
       loot.push({ type: "relic", value: bossRelic });
-      usedTypes.add("relic"); // still prevents duplicate relic drops
-      drops--;
+      usedTypes.add("relic");
+      dropsRemaining--; // Only reduce dropsRemaining for relic
     } else {
-      console.warn("No boss relics available in relicList!");
+      console.warn("⚠️ Boss relic was null or missing .name:", bossRelic);
     }
+
+    usedTypes.add("gold"); // Prevent gold from dropping again
   }
 
-  while (loot.length < drops) {
+  while (dropsRemaining > 0) {
     const available = Object.entries(weights).filter(
       ([type, weight]) => weight > 0 && !usedTypes.has(type)
     );
 
-    if (available.length === 0) break;
+    if (available.length === 0) {
+      console.warn("⚠️ No available loot types remaining.");
+      break;
+    }
 
     const totalWeight = available.reduce((sum, [_, w]) => sum + w, 0);
     let roll = Math.random() * totalWeight;
@@ -3879,25 +3945,65 @@ function generateEnemyLoot(state, difficulty, numAbilities, isBoss) {
     }
 
     usedTypes.add(selected);
+    console.log("🎁 Loot type selected:", selected);
 
+    // === Loot Type Handling ===
     if (selected === "gold") {
       const base = { easy: 3, medium: 5, hard: 8 }[difficulty] ?? 2;
       const amount =
         (base + level + luck + numAbilities * 3) * (0.5 + Math.random());
-      loot.push({ type: "gold", value: Math.max(1, Math.round(amount)) });
+      const goldAmount = Math.max(1, Math.round(amount));
+      console.log("💰 Gold awarded:", goldAmount);
+      loot.push({ type: "gold", value: goldAmount });
     } else if (selected === "card") {
-      loot.push({ type: "card", value: generateRandomCard(state) });
+      const card = generateRandomCard(state);
+      if (!card) {
+        console.warn("⚠️ Card generation returned null or undefined!");
+        continue;
+      }
+      console.log("🃏 Card awarded:", card.name ?? "[Unnamed card]");
+      loot.push({ type: "card", value: card });
     } else if (selected === "potion") {
-      loot.push({ type: "potion", value: generateRandomPotion(state) });
+      const potion = generateRandomPotion(state);
+      if (!potion) {
+        console.warn("⚠️ Potion generation returned null or undefined!");
+        continue;
+      }
+      console.log(
+        "🧪 Potion awarded:",
+        potion.name || potion.type || "[Unnamed potion]"
+      );
+      loot.push({ type: "potion", value: potion });
     } else if (selected === "relic") {
-      loot.push({ type: "relic", value: generateRandomRelic(state) });
+      const relic = generateRandomRelic(state);
+      if (!relic) {
+        console.warn("⚠️ Relic generation returned null or undefined!");
+        continue;
+      }
+      console.log("💎 Relic awarded:", relic.name ?? "[Unnamed relic]");
+      loot.push({ type: "relic", value: relic });
     } else if (selected === "gem") {
-      loot.push({ type: "gem", value: generateRandomGem(state) });
+      const gem = generateRandomGem(state);
+      if (!gem) {
+        console.warn("⚠️ Gem generation returned null or undefined!");
+        continue;
+      }
+      console.log(
+        "🔮 Gem awarded:",
+        gem.name || gem.color || gem.type || "[Unnamed gem]"
+      );
+      loot.push({ type: "gem", value: gem });
+    } else {
+      console.warn("❓ Unknown loot type selected:", selected);
     }
+
+    dropsRemaining--;
   }
 
+  console.log("🎉 Final generated loot:", loot);
   return loot;
 }
+
 function permanentlyUpgradeRandomCardsInDeck(deck, numUpgrades = 1) {
   const upgradableCards = deck.filter((card) => !card.unupgradable);
   const shuffled = [...upgradableCards].sort(() => Math.random() - 0.5);
@@ -4730,6 +4836,8 @@ function render(state, dispatch) {
     state.offerings.combatRewards &&
     state.offerings.combatRewards.length > 0
   ) {
+    console.log("🔎 Rendering combatRewards:", state.offerings.combatRewards);
+
     const rewardSection = document.createElement("div");
     rewardSection.innerHTML = `<h3>Combat Rewards</h3>`;
 
@@ -4805,7 +4913,7 @@ function render(state, dispatch) {
 
     const banner = document.createElement("h1");
     banner.textContent =
-      state.result === "Victory" ? "🏆 Victory!" : "💀 Defeat!";
+      state.gameOverResult === "victory" ? "🏆 Victory!" : "💀 Defeat!";
     gameOverSection.appendChild(banner);
 
     const summary = document.createElement("div");
@@ -4881,13 +4989,15 @@ function render(state, dispatch) {
     const beltSection = document.createElement("div");
     beltSection.innerHTML = `<h3>Your Potions</h3>`;
 
+    const isCombatPhase = state.currentPhase === PHASES.COMBAT;
+    const isGameOver = state.currentPhase === PHASES.GAME_OVER;
+
     state.potionBelt.forEach((potion, index) => {
       const btn = document.createElement("button");
       btn.textContent = potion.name;
 
-      const isCombatPhase = state.currentPhase === PHASES.COMBAT;
       const isDrinkableNow =
-        potion.drinkableOutOfCombat !== false || isCombatPhase;
+        !isGameOver && (potion.drinkableOutOfCombat !== false || isCombatPhase);
 
       if (!isDrinkableNow) {
         btn.disabled = true;
@@ -4906,6 +5016,7 @@ function render(state, dispatch) {
 
     output.appendChild(beltSection);
   }
+  setupHotkeys(state, dispatch);
 }
 // #endregion
 
@@ -4915,11 +5026,151 @@ window.onload = () => {
 };
 
 //hotkeys
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
+function setupHotkeys(state, dispatch) {
+  document.onkeydown = null; // clear previous
+
+  document.onkeydown = (e) => {
+    const key = e.key;
+
+    // === Always Available
+    if (key === "Escape") {
+      dispatch({ type: ACTIONS.SCREEN_CHANGE, payload: SCREENS.MAIN });
+    }
+
+    // === Path Selection
+    const isPathSelection =
+      state.currentPhase === PHASES.PATH_SELECTION &&
+      state.offerings.paths?.length > 0;
+
+    if (isPathSelection) {
+      const index = parseInt(key, 10) - 1;
+      if (!isNaN(index) && state.offerings.paths[index]) {
+        dispatch({ type: ACTIONS.PICK_PATH, payload: index });
+      }
+    }
+
+    // === Combat Phase
+    const isCombat =
+      state.currentPhase === PHASES.COMBAT &&
+      state.combat &&
+      ![SCREENS.COMBAT_DECK, SCREENS.GRAVEYARD, SCREENS.EXILE].includes(
+        state.currentScreen
+      );
+
+    if (isCombat) {
+      if (/^[1-9]$/.test(key) || key === "0") {
+        const index = key === "0" ? 9 : parseInt(key, 10) - 1;
+        const card = state.combat.hand?.[index];
+        if (
+          card &&
+          !card.uncastable &&
+          (card.inkCost ?? 0) <= state.combat.ink
+        ) {
+          dispatch({ type: ACTIONS.PLAY_CARD, payload: index });
+        }
+      }
+
+      if (key === " ") {
+        e.preventDefault();
+        dispatch({ type: ACTIONS.CAST_SPELLBOOK });
+      }
+
+      if (key.toLowerCase() === "m" && (state.combat?.mulligans ?? 0) > 0) {
+        dispatch({ type: ACTIONS.MULLIGAN });
+      }
+
+      if (key === "[")
+        toggleCombatInspect(dispatch, state, SCREENS.COMBAT_DECK);
+      if (key === "]") toggleCombatInspect(dispatch, state, SCREENS.GRAVEYARD);
+      if (key === "\\") toggleCombatInspect(dispatch, state, SCREENS.EXILE);
+    }
+
+    // === Main Menu: Spacebar to start new game
+    if (state.currentPhase === PHASES.MAIN_MENU) {
+      if (key === " ") {
+        e.preventDefault();
+        dispatch({
+          type: ACTIONS.ADVANCE_PHASE,
+          payload: PHASES.DIFFICULTY_SELECTION,
+        });
+      }
+    }
+
+    // === Difficulty Selection: 1 = Easy, 2 = Medium, 3 = Hard
+    if (state.currentPhase === PHASES.DIFFICULTY_SELECTION) {
+      if (key === "1") {
+        selectDifficultyAndBeginGame(dispatch, DIFFICULTIES.EASY);
+      }
+      if (key === "2") {
+        selectDifficultyAndBeginGame(dispatch, DIFFICULTIES.MEDIUM);
+      }
+      if (key === "3") {
+        selectDifficultyAndBeginGame(dispatch, DIFFICULTIES.HARD);
+      }
+    }
+
+    // === Relic Offerings: 1, 2, 3 to pick relics
+    if (
+      state.offerings.relics &&
+      state.offerings.relics.length > 0 &&
+      state.currentScreen !== SCREENS.DECK
+    ) {
+      const relicIndex = parseInt(key) - 1;
+      if (relicIndex >= 0 && relicIndex < state.offerings.relics.length) {
+        dispatch({ type: ACTIONS.PICK_RELIC, payload: relicIndex });
+      }
+    }
+
+    // === Combat End Phase
+    const isCombatEnd =
+      state.currentPhase === PHASES.COMBAT_END &&
+      state.offerings.combatRewards?.length >= 0;
+
+    if (isCombatEnd) {
+      if (key === " ") {
+        e.preventDefault();
+        dispatch({ type: ACTIONS.CLOSE_COMBAT_REWARDS });
+      }
+
+      // Claim specific reward (1–9, 0)
+      if (/^[1-9]$/.test(key) || key === "0") {
+        const index = key === "0" ? 9 : parseInt(key, 10) - 1;
+        const reward = state.offerings.combatRewards?.[index];
+        if (!reward) return;
+
+        if (reward.type === "gold") {
+          dispatch({
+            type: ACTIONS.CLAIM_GOLD_REWARD,
+            payload: { index, amount: reward.value },
+          });
+        } else if (reward.type === "card") {
+          dispatch({ type: ACTIONS.PICK_CARD, payload: index });
+        } else if (reward.type === "relic") {
+          dispatch({ type: ACTIONS.PICK_RELIC, payload: index });
+        } else if (reward.type === "potion") {
+          dispatch({ type: ACTIONS.PICK_POTION, payload: index });
+        } else if (reward.type === "gem") {
+          dispatch({
+            type: ACTIONS.OPEN_MOD_SCREEN,
+            payload: {
+              mod: { gem: reward.value },
+              origin: PHASES.COMBAT_END,
+            },
+          });
+        }
+      }
+    }
+  };
+}
+
+// Helper function for toggling inspect screens
+function toggleCombatInspect(dispatch, state, screen) {
+  if (state.currentScreen === screen) {
     dispatch({ type: ACTIONS.SCREEN_CHANGE, payload: SCREENS.MAIN });
+  } else {
+    dispatch({ type: ACTIONS.SCREEN_CHANGE, payload: screen });
   }
-});
+}
 
 //#region WIP
 // //------------------------------------------------WIP functions for MVP ------------------------------------------------
@@ -5274,6 +5525,7 @@ function castSpellbook(state) {
   // ✅ Enemy is dead → player wins
   return combatEnd(updatedState, { result: "win" });
 }
+
 function releaseBunnies(state) {
   const bunnyDamage = state.combat.bunnies ?? 0;
 
@@ -5590,9 +5842,6 @@ function combatEnd(state, context = {}) {
     const defeatedEnemies = [...(updatedState.defeatedEnemies ?? []), enemy];
 
     if (enemy?.isBoss) {
-      const bossRelic = getRandomBossRelic();
-      if (bossRelic) rewards.push(bossRelic);
-
       const newStage = (updatedState.stage ?? 0) + 1;
 
       updatedState = {
@@ -5629,9 +5878,8 @@ function combatEnd(state, context = {}) {
     }
   } else {
     // === Handle defeat
-    const remainingEnemyHp = updatedState.combat?.enemy?.hp ?? 0;
-
     if (enemy?.isBoss) {
+      // Bosses cause instant game over — no damage calculation needed
       updatedState = {
         ...updatedState,
         gameOverResult: "loss",
@@ -5641,6 +5889,11 @@ function combatEnd(state, context = {}) {
         ],
       };
     } else {
+      // Safe damage calc for regular enemies
+      const enemyMaxHp = enemy?.maxHp ?? 0;
+      const enemyCurrentHp = updatedState.combat?.enemyHp ?? enemyMaxHp;
+      const remainingEnemyHp = Math.max(0, enemyCurrentHp);
+
       if (remainingEnemyHp > 0) {
         updatedState = takeDamage(updatedState, remainingEnemyHp, {
           skipDeathCheck: true,
@@ -5872,17 +6125,7 @@ function weakenEnemyByPercent(state, percent) {
   return dealDamage(state, damage, [], { isBonus: true });
 }
 
-//current bugs/fixes/additions.
-
-//bug with socketing naming (or at least displaying) - eg., Amber Bunnymancy +1 2d5+1 (checkinspect deck render as well as the naming logic, error could be in either place)
-// same bug in card offerings too?
-
-//unknown reward dropping from boss
-//possible bug between enchant fingertips and thunder cards
-
-//damage taken when losing comabt is too high.
-
-//expanding the game
+// ============================================= expanding the game =============================================================
 // a mythic gem that makes a spell cost 1 less ink, be an instant, and exile on cast.
 
 // implement "critical hit" mechanics; cards, gems, and relics, plus three 'critical hit matters' mythics - one that boosts crit amounts,  one that increases crit chance, and one that gives crits to everything.
