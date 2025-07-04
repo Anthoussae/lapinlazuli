@@ -121,6 +121,14 @@ parcelRequire = (function (modules, cache, entry, globalName) {
 "use strict";
 
 //#region enums
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.SCREENS = exports.PHASES = exports.DIFFICULTIES = exports.ACTIONS = void 0;
+exports.changeScreen = changeScreen;
+exports.returnToMain = returnToMain;
+exports.selectDifficultyAndBeginGame = selectDifficultyAndBeginGame;
+exports.setupHotkeys = setupHotkeys;
 var _excluded = ["anonymousNameDisplay"];
 var _Object$freeze3;
 function _toArray(r) { return _arrayWithHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableRest(); }
@@ -163,7 +171,7 @@ var SPECIAL_CARD_SUBTYPES = Object.freeze({
   UNIQUE: "unique",
   STATUS: "status"
 });
-var DIFFICULTIES = Object.freeze({
+var DIFFICULTIES = exports.DIFFICULTIES = Object.freeze({
   EASY: "easy",
   MEDIUM: "medium",
   HARD: "hard"
@@ -200,7 +208,7 @@ var PATHS = Object.freeze({
   PURGE: "Purge",
   TRANSMUTE: "Transmute"
 });
-var SCREENS = Object.freeze({
+var SCREENS = exports.SCREENS = Object.freeze({
   MAIN: "main view",
   DECK: "inspect deck",
   SETTINGS: "settings",
@@ -220,7 +228,7 @@ var RARITIES = Object.freeze({
   MYTHIC: "mythic",
   LEGENDARY: "legendary"
 });
-var PHASES = Object.freeze({
+var PHASES = exports.PHASES = Object.freeze({
   MAIN_MENU: "main menu",
   DIFFICULTY_SELECTION: "difficulty selection",
   MYTHIC_RELIC_OFFERING: "mythic relic offering",
@@ -240,7 +248,7 @@ var PHASES = Object.freeze({
   PURGE: "purge",
   HOARD: "hoard"
 });
-var ACTIONS = Object.freeze(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({
+var ACTIONS = exports.ACTIONS = Object.freeze(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({
   NEW_GAME: "NEW_GAME",
   SET_DIFFICULTY: "SET_DIFFICULTY",
   GENERATE_STARTER_DECK: "GENERATE_STARTER_DECK",
@@ -1016,48 +1024,6 @@ function inspectExile(dispatch) {
 function returnToMain(dispatch) {
   changeScreen(dispatch, SCREENS.MAIN);
 }
-function assignShopPrices(state) {
-  var globalMultiplier = state.shopPriceMultiplier || 1;
-  var basePrices = {
-    card: 10,
-    potion: 20,
-    gem: 30,
-    relic: 100
-  };
-  var rarityMultipliers = {
-    common: 1,
-    uncommon: 1.2,
-    rare: 1.4,
-    mythic: 1.6,
-    legendary: 2
-  };
-  var updatedShopfront = state.offerings.shopfront.map(function (entry) {
-    var _item$rarity, _item$rarity$toLowerC;
-    var type = entry.type,
-      item = entry.item;
-    if (!item || !item.name) {
-      console.warn("Invalid shop item during price assignment:", entry);
-      return entry;
-    }
-    var basePrice = basePrices[type] || 0;
-    var upgrades = item.upgrades || 0;
-    var upgradeCost = ["card", "potion"].includes(type) ? upgrades * 5 : 0;
-    var rarity = ((_item$rarity = item.rarity) === null || _item$rarity === void 0 || (_item$rarity$toLowerC = _item$rarity.toLowerCase) === null || _item$rarity$toLowerC === void 0 ? void 0 : _item$rarity$toLowerC.call(_item$rarity)) || "common";
-    var rarityMultiplier = rarityMultipliers[rarity] || 1;
-    var price = Math.round((basePrice + upgradeCost) * rarityMultiplier * globalMultiplier);
-    return _objectSpread(_objectSpread({}, entry), {}, {
-      item: _objectSpread(_objectSpread({}, item), {}, {
-        price: price
-      })
-    });
-  });
-  return _objectSpread(_objectSpread({}, state), {}, {
-    offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
-      shopfront: updatedShopfront
-    }),
-    log: ["Assigned prices to shop items."].concat(_toConsumableArray(state.log))
-  });
-}
 function anonymizeObject(obj) {
   return _objectSpread(_objectSpread({}, obj), {}, {
     anonymousNameDisplay: true
@@ -1073,6 +1039,441 @@ function revealAnonymousPaths(paths) {
 
 //#endregion
 //#region reducer-action handlers
+function getShopPriceMultiplier(state) {
+  return state.relicBelt.reduce(function (multiplier, relic) {
+    var _relic$triggers;
+    var effect = (_relic$triggers = relic.triggers) === null || _relic$triggers === void 0 ? void 0 : _relic$triggers[TRIGGER_EVENTS.ASSIGN_SHOP_PRICES];
+    return effect !== null && effect !== void 0 && effect.shopPriceMultiplier ? multiplier * effect.shopPriceMultiplier : multiplier;
+  }, 1);
+}
+function purgeCard(state, card) {
+  if (!card || !card.name) {
+    console.error("Invalid card passed to purgeCard:", card);
+    return state;
+  }
+  var updatedDeck = state.campaign.deck.filter(function (c) {
+    return c !== card;
+  });
+  var updatedTrash = [].concat(_toConsumableArray(state.trashPile || []), [card]);
+  return _objectSpread(_objectSpread({}, state), {}, {
+    campaign: _objectSpread(_objectSpread({}, state.campaign), {}, {
+      deck: updatedDeck,
+      trashPile: updatedTrash
+    }),
+    log: ["Purged card: ".concat(card.name)].concat(_toConsumableArray(state.log))
+  });
+}
+function initializeCombatPhase(state, path) {
+  var _state$level, _state$stage, _state$campaign$mulli, _state$baseBunnies;
+  var level = (_state$level = state.level) !== null && _state$level !== void 0 ? _state$level : 1;
+  var stage = (_state$stage = state.stage) !== null && _state$stage !== void 0 ? _state$stage : 0;
+
+  // Define ability power modifier based on level
+  var modifyEnemyAbilityPower = function modifyEnemyAbilityPower(_ref4) {
+    var currentValue = _ref4.currentValue;
+    if (stage === 2) return currentValue + 2;
+    if (stage === 1) return currentValue + 1;
+    return currentValue;
+  };
+  var enemy = generateEnemy(state, path, modifyEnemyAbilityPower);
+
+  // Deep copy and shuffle the deck
+  var deepDeckCopy = JSON.parse(JSON.stringify(state.campaign.deck));
+  var shuffledDeck = shuffleArray(deepDeckCopy);
+  var newCombat = {
+    enemy: enemy,
+    enemyHp: enemy.hp,
+    deck: shuffledDeck,
+    hand: [],
+    graveyard: [],
+    // was 'discard' but rest of code uses 'graveyard'
+    exile: [],
+    mulligans: (_state$campaign$mulli = state.campaign.mulligans) !== null && _state$campaign$mulli !== void 0 ? _state$campaign$mulli : 0,
+    ink: state.campaign.ink,
+    maxInk: state.campaign.ink,
+    books: state.campaign.books,
+    maxBooks: state.campaign.books,
+    pages: state.campaign.pages,
+    maxPages: state.campaign.pages,
+    handSize: state.campaign.handSize,
+    baseBunnies: (_state$baseBunnies = state.baseBunnies) !== null && _state$baseBunnies !== void 0 ? _state$baseBunnies : 0,
+    bunnies: 0,
+    combatEnded: false
+  };
+  var newState = _objectSpread(_objectSpread({}, state), {}, {
+    combat: newCombat,
+    log: ["\u2694\uFE0F Combat begins against ".concat(enemy.name, "!")].concat(_toConsumableArray(state.log))
+  });
+  newState = checkRelicTriggers(newState, TRIGGER_EVENTS.COMBAT_START);
+  newState = checkEnemyTriggers(newState, TRIGGER_EVENTS.COMBAT_START);
+  console.log("🛠️ Starting combat with baseBunnies =", newCombat.baseBunnies);
+
+  // Start the player's turn (draw hand, refill ink, setup spellbook, etc.)
+  newState = startTurn(newState);
+  return newState;
+}
+function checkRelicTriggers(state, triggerEvent) {
+  var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {
+    damageType: null
+  };
+  var updatedState = _objectSpread({}, state);
+  var result = context.payload || null;
+  if (!Array.isArray(state.relicBelt)) {
+    console.error("❌ relicBelt is not an array!", state.relicBelt);
+  } else {
+    console.log("👜 Current relic belt:", state.relicBelt.map(function (r) {
+      return r.name || r;
+    }));
+  }
+
+  // === Special case: Relic is being picked up ===
+  if (triggerEvent === TRIGGER_EVENTS.RELIC_PICKUP && context.relic) {
+    var _relic$triggers2, _updatedState$offerin;
+    var relic = context.relic;
+    var effect = (_relic$triggers2 = relic.triggers) === null || _relic$triggers2 === void 0 ? void 0 : _relic$triggers2[triggerEvent];
+    if (!effect) return _objectSpread(_objectSpread({}, updatedState), {}, {
+      result: result
+    });
+    var campaign = _objectSpread({}, updatedState.campaign);
+    var newHealth = updatedState.health;
+    var newMaxHealth = updatedState.maxHealth;
+    if (effect.reduceInkCostOfFireCardsInDeck > 0) {
+      var modifiedCount = 0;
+      campaign.deck = campaign.deck.map(function (card) {
+        if (Array.isArray(card.damageTypes) && card.damageTypes.includes(DAMAGE_TYPES.FIRE) && typeof card.inkCost === "number") {
+          modifiedCount++;
+          return _objectSpread(_objectSpread({}, card), {}, {
+            inkCost: Math.max(0, card.inkCost - effect.reduceInkCostOfFireCardsInDeck)
+          });
+        }
+        return card;
+      });
+      if (modifiedCount > 0) {
+        updatedState.log.unshift("".concat(relic.name, " reduced the ink cost of ").concat(modifiedCount, " fire card(s) in your deck."));
+      }
+    }
+    if (effect.bonusPages) {
+      campaign.pages += effect.bonusPages;
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusPages, " max pages."));
+    }
+    if (effect.BonusMulligans) {
+      var _campaign$mulligans;
+      campaign.mulligans = ((_campaign$mulligans = campaign.mulligans) !== null && _campaign$mulligans !== void 0 ? _campaign$mulligans : 0) + effect.BonusMulligans;
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.BonusMulligans, " mulligan."));
+    }
+    if (effect.bonusInk) {
+      campaign.ink += effect.bonusInk;
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusInk, " max ink."));
+    }
+    if (effect.bonusBooks) {
+      campaign.books += effect.bonusBooks;
+      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusBooks, " max books."));
+    }
+    if (effect.bonusHandSize) {
+      campaign.handSize += effect.bonusHandSize;
+      updatedState.log.unshift("".concat(relic.name, " increased your hand size by ").concat(effect.bonusHandSize, "."));
+    }
+    if (effect.bonusHealth) {
+      newHealth += effect.bonusHealth;
+      newMaxHealth += effect.bonusHealth;
+      updatedState.log.unshift("".concat(relic.name, " increased your max health by ").concat(effect.bonusHealth, " HP."));
+    }
+    if (effect.bonusGold) {
+      updatedState = gainGold(updatedState, effect.bonusGold);
+      updatedState.log.unshift("".concat(relic.name, " gave you ").concat(effect.bonusGold, " gold."));
+    }
+    if (effect.bonusBaseBunnies) {
+      updatedState = increaseBaseBunnies(updatedState, effect.bonusBaseBunnies);
+      updatedState.log.unshift("".concat(relic.name, " added ").concat(effect.bonusBaseBunnies, " base bunnies."));
+    }
+    if (effect.permanentlyUpgradeRandomCardsInDeck > 0) {
+      var deck = campaign.deck;
+      var numToUpgrade = Math.min(effect.permanentlyUpgradeRandomCardsInDeck, deck.length);
+      campaign.deck = permanentlyUpgradeRandomCardsInDeck(deck, numToUpgrade);
+      updatedState.log.unshift("".concat(relic.name, " permanently upgraded ").concat(numToUpgrade, " card(s) in your deck."));
+    }
+    if (effect.shopPriceMultiplier && state.currentPhase === PHASES.SHOP && (_updatedState$offerin = updatedState.offerings) !== null && _updatedState$offerin !== void 0 && _updatedState$offerin.shopfront) {
+      var newMultiplier = getShopPriceMultiplier(updatedState);
+      var updatedShopfront = updatedState.offerings.shopfront.map(function (entry) {
+        var _item$rarity, _item$rarity$toLowerC;
+        var type = entry.type,
+          item = entry.item;
+        var basePrices = {
+          card: 10,
+          potion: 20,
+          gem: 30,
+          relic: 100
+        };
+        var rarityMultipliers = {
+          common: 1,
+          uncommon: 1.2,
+          rare: 1.4,
+          mythic: 1.6,
+          legendary: 2
+        };
+        var basePrice = basePrices[type] || 0;
+        var upgrades = item.upgrades || 0;
+        var upgradeCost = ["card", "potion"].includes(type) ? upgrades * 5 : 0;
+        var rarity = ((_item$rarity = item.rarity) === null || _item$rarity === void 0 || (_item$rarity$toLowerC = _item$rarity.toLowerCase) === null || _item$rarity$toLowerC === void 0 ? void 0 : _item$rarity$toLowerC.call(_item$rarity)) || "common";
+        var rarityMultiplier = rarityMultipliers[rarity] || 1;
+        var price = Math.round((basePrice + upgradeCost) * rarityMultiplier * newMultiplier);
+        return _objectSpread(_objectSpread({}, entry), {}, {
+          item: _objectSpread(_objectSpread({}, item), {}, {
+            price: price
+          })
+        });
+      });
+      updatedState.offerings.shopfront = updatedShopfront;
+      updatedState.log.unshift("".concat(relic.name, " triggered and updated shop prices."));
+    }
+    updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+      campaign: campaign,
+      health: newHealth,
+      maxHealth: newMaxHealth
+    });
+    return _objectSpread(_objectSpread({}, updatedState), {}, {
+      result: result
+    });
+  }
+
+  // === General case: loop through all relics and handle triggers ===
+  var _iterator = _createForOfIteratorHelper(updatedState.relicBelt),
+    _step;
+  try {
+    for (_iterator.s(); !(_step = _iterator.n()).done;) {
+      var _relic$triggers3;
+      var _relic = _step.value;
+      if (!_relic.triggers || _typeof(_relic.triggers) !== "object") continue;
+      var allTriggerKeys = Object.keys(_relic.triggers);
+      var _effect = (_relic$triggers3 = _relic.triggers) === null || _relic$triggers3 === void 0 ? void 0 : _relic$triggers3[triggerEvent];
+      if (!_effect) continue;
+
+      // === Handle Lightning spell draw trigger
+      if (triggerEvent === TRIGGER_EVENTS.PLAY_CARD && _effect.ifLightningDrawCards > 0) {
+        var card = context.card || context.payload;
+        var isLightning = Array.isArray(card === null || card === void 0 ? void 0 : card.damageTypes) && card.damageTypes.includes(DAMAGE_TYPES.LIGHTNING);
+        if (isLightning) {
+          updatedState.log.unshift("".concat(_relic.name, " triggered and drew ").concat(_effect.ifLightningDrawCards, " card").concat(_effect.ifLightningDrawCards > 1 ? "s" : "", " because you played a Lightning card!"));
+          for (var i = 0; i < _effect.ifLightningDrawCards; i++) {
+            updatedState = drawCard(updatedState);
+          }
+        }
+      }
+      // potion pickup triggers
+      if (triggerEvent === TRIGGER_EVENTS.POTION_PICKUP && _effect.upgradePotion) {
+        var potion = context.potion || context.payload;
+        if (potion) {
+          var upgraded = upgradePotion(potion, 1);
+          updatedState.log.unshift("".concat(_relic.name, " upgraded ").concat(potion.name, " into ").concat(upgraded.name, "."));
+          result = upgraded;
+        } else {
+          console.warn("\u26A0\uFE0F ".concat(_relic.name, " triggered upgradePotion but no potion provided."));
+        }
+      }
+
+      // === Other trigger types
+      if (triggerEvent === TRIGGER_EVENTS.COMBAT_START && _effect.weakenEnemyHpPercent > 0) {
+        updatedState = weakenEnemyByPercent(updatedState, _effect.weakenEnemyHpPercent);
+        updatedState.log.unshift("".concat(_relic.name, " weakened the enemy by ").concat(_effect.weakenEnemyHpPercent * 100, "%!"));
+      }
+      if (_effect.bunnyAdd) {
+        updatedState.combat = _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          bunnies: (updatedState.combat.bunnies || 0) + _effect.bunnyAdd
+        });
+        updatedState.log.unshift("".concat(_relic.name, " summoned ").concat(_effect.bunnyAdd, " bunny").concat(_effect.bunnyAdd === 1 ? "" : "ies", "!"));
+      }
+      if (_effect.permanentlyUpgradeRandomCardsInDeck > 0) {
+        var _campaign = _objectSpread({}, updatedState.campaign);
+        var _deck = _campaign.deck;
+        var _numToUpgrade = Math.min(_effect.permanentlyUpgradeRandomCardsInDeck, _deck.length);
+        _campaign.deck = permanentlyUpgradeRandomCardsInDeck(_deck, _numToUpgrade);
+        updatedState.campaign = _campaign;
+        updatedState.log.unshift("".concat(_relic.name, " permanently upgraded ").concat(_numToUpgrade, " card(s) in your deck."));
+      }
+
+      // === Support for Whetstone ===
+      if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP && _effect.upgradeCard) {
+        var cardToUpgrade = context.card || context.payload;
+        if (cardToUpgrade) {
+          console.log("\uD83E\uDE93 ".concat(_relic.name, " is upgrading a picked-up card: ").concat(cardToUpgrade.name));
+          var _upgraded = upgradeCard(cardToUpgrade, 1);
+          updatedState.log.unshift("".concat(_relic.name, " upgraded ").concat(cardToUpgrade.name, " into ").concat(_upgraded.name, "."));
+          result = _upgraded;
+        } else {
+          console.warn("\u26A0\uFE0F ".concat(_relic.name, " triggered upgradeCard but no card was provided."));
+        }
+      }
+
+      // === Support for Dousing Rod ===
+      if (triggerEvent === TRIGGER_EVENTS.POPULATE_PATHS && _effect.revealAnonymousPaths) {
+        var currentPaths = context.payload || [];
+        result = {
+          paths: revealAnonymousPaths(currentPaths)
+        };
+        updatedState.log.unshift("".concat(_relic.name, " revealed anonymous paths!"));
+      }
+
+      // === Support for Porcelain Koi ===
+      if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP) {
+        var pickedCard = context.card || context.payload;
+        if (_effect.bonusHealth) {
+          updatedState.health += _effect.bonusHealth;
+          updatedState.maxHealth += _effect.bonusHealth;
+          updatedState.log.unshift("".concat(_relic.name, " increased your max health by ").concat(_effect.bonusHealth).concat(pickedCard !== null && pickedCard !== void 0 && pickedCard.name ? " (from picking ".concat(pickedCard.name, ")") : "", "."));
+        }
+        if (_effect.bonusGold) {
+          updatedState = gainGold(updatedState, _effect.bonusGold);
+          updatedState.log.unshift("".concat(_relic.name, " granted you ").concat(_effect.bonusGold, " gold").concat(pickedCard !== null && pickedCard !== void 0 && pickedCard.name ? " (from picking ".concat(pickedCard.name, ")") : "", "."));
+        }
+      }
+
+      // === Add additional relic effects here ===
+    }
+  } catch (err) {
+    _iterator.e(err);
+  } finally {
+    _iterator.f();
+  }
+  return _objectSpread(_objectSpread({}, updatedState), {}, {
+    result: result
+  });
+}
+function checkEnemyTriggers(state, triggerEvent) {
+  var _updatedState$combat;
+  var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+  var updatedState = _objectSpread({}, state);
+  var enemy = (_updatedState$combat = updatedState.combat) === null || _updatedState$combat === void 0 ? void 0 : _updatedState$combat.enemy;
+  if (!enemy) return updatedState;
+  var abilities = enemy.abilities || {};
+  var logMessages = [];
+  if (triggerEvent === TRIGGER_EVENTS.COMBAT_START) {
+    // Ink Drink effect
+    if (abilities[ENEMY_ABILITIES.INK_DRINK]) {
+      var amount = abilities[ENEMY_ABILITIES.INK_DRINK];
+      var newMaxInk = Math.max(0, updatedState.combat.maxInk - amount);
+      var newInk = Math.min(updatedState.combat.ink, newMaxInk); // Ensure current ink doesn't exceed new max
+
+      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          maxInk: newMaxInk,
+          ink: newInk
+        })
+      });
+      logMessages.push("".concat(enemy.name, " drained ").concat(amount, " max ink at the start of combat!"));
+    }
+
+    // Increase Health effect
+    if (abilities[ENEMY_ABILITIES.INCREASE_HEALTH]) {
+      var multiplier = abilities[ENEMY_ABILITIES.INCREASE_HEALTH]; // e.g., 1.5
+
+      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          enemyHp: Math.floor(updatedState.combat.enemyHp * multiplier),
+          enemy: _objectSpread(_objectSpread({}, updatedState.combat.enemy), {}, {
+            hp: Math.floor(updatedState.combat.enemy.hp * multiplier)
+          })
+        })
+      });
+      logMessages.push("".concat(enemy.name, " increased its health by ").concat(Math.round((multiplier - 1) * 100), "%!"));
+    }
+
+    // Downgrade Cards at Combat Start
+    if (abilities[ENEMY_ABILITIES.DOWNGRADE_CARDS]) {
+      var _amount = abilities[ENEMY_ABILITIES.DOWNGRADE_CARDS];
+      var deck = _toConsumableArray(updatedState.combat.deck);
+      var downgradable = deck.filter(function (card) {
+        return !card.undowngradable;
+      });
+      var shuffled = _toConsumableArray(downgradable).sort(function () {
+        return Math.random() - 0.5;
+      });
+      var toDowngrade = shuffled.slice(0, _amount);
+      var updatedDeck = deck.map(function (card) {
+        return toDowngrade.includes(card) ? downgradeCard(card, 1) : card;
+      });
+      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          deck: updatedDeck
+        })
+      });
+      logMessages.push("".concat(enemy.name, " downgraded ").concat(toDowngrade.length, " card(s) in your deck!"));
+    }
+
+    // Hand Size Reduction
+    if (abilities[ENEMY_ABILITIES.HAND_SIZE_REDUCTION]) {
+      var _amount2 = abilities[ENEMY_ABILITIES.HAND_SIZE_REDUCTION];
+      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
+          handSize: Math.max(1, updatedState.combat.handSize - _amount2)
+        })
+      });
+      logMessages.push("".concat(enemy.name, " reduces your hand size by ").concat(_amount2, "!"));
+    }
+
+    // === Add curses at combat start ===
+    if (triggerEvent === TRIGGER_EVENTS.COMBAT_START) {
+      var _abilities = enemy.abilities || {};
+      if (_abilities[ENEMY_ABILITIES.ADD_PEBBLES]) {
+        var _amount3 = _abilities[ENEMY_ABILITIES.ADD_PEBBLES];
+        for (var i = 0; i < _amount3; i++) {
+          updatedState = addCardToCombatDeck(updatedState, "Sisyphus' Pebble");
+        }
+        logMessages.push("".concat(enemy.name, " added ").concat(_amount3, " Sisyphus' Pebble to your deck!"));
+      }
+      if (_abilities[ENEMY_ABILITIES.ADD_MERCURY]) {
+        var _amount4 = _abilities[ENEMY_ABILITIES.ADD_MERCURY];
+        for (var _i2 = 0; _i2 < _amount4; _i2++) {
+          updatedState = addCardToCombatDeck(updatedState, "Mercury Droplet");
+        }
+        logMessages.push("".concat(enemy.name, " added ").concat(_amount4, " Mercury Droplet(s) to your deck!"));
+      }
+      if (_abilities[ENEMY_ABILITIES.ADD_CLUTTER]) {
+        var _amount5 = _abilities[ENEMY_ABILITIES.ADD_CLUTTER];
+        for (var _i3 = 0; _i3 < _amount5; _i3++) {
+          updatedState = addCardToCombatDeck(updatedState, "Clutter");
+        }
+        logMessages.push("".concat(enemy.name, " added ").concat(_amount5, " Clutter card(s) to your deck!"));
+      }
+    }
+  }
+  if (logMessages.length > 0) {
+    updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
+      log: ["\u26A0\uFE0F Enemy ability activated!"].concat(logMessages, _toConsumableArray(updatedState.log))
+    });
+  }
+  return updatedState;
+}
+function modifyCombatInk(state, amount) {
+  var _state$combat$ink, _state$combat, _state$combat$maxInk, _state$combat2;
+  var current = (_state$combat$ink = (_state$combat = state.combat) === null || _state$combat === void 0 ? void 0 : _state$combat.ink) !== null && _state$combat$ink !== void 0 ? _state$combat$ink : 0;
+  var max = (_state$combat$maxInk = (_state$combat2 = state.combat) === null || _state$combat2 === void 0 ? void 0 : _state$combat2.maxInk) !== null && _state$combat$maxInk !== void 0 ? _state$combat$maxInk : 0;
+  var newInk = Math.max(0, Math.min(current + amount, max));
+  var actualChange = newInk - current;
+
+  // let changeMessage =
+  //   actualChange === 0
+  //     ? `Ink unchanged.`
+  //     : actualChange > 0
+  //     ? `Gained ${actualChange} ink.`
+  //     : `Spent ${Math.abs(actualChange)} ink.`;
+
+  return _objectSpread(_objectSpread({}, state), {}, {
+    combat: _objectSpread(_objectSpread({}, state.combat), {}, {
+      ink: newInk
+    })
+    // log: [changeMessage, ...state.log],
+  });
+}
+function heal(state, amount) {
+  var current = state.health || 0;
+  var max = state.maxHealth || 0;
+  var newHealth = Math.min(current + amount, max);
+  var healedAmount = newHealth - current;
+  return _objectSpread(_objectSpread({}, state), {}, {
+    health: newHealth,
+    log: ["Healed ".concat(healedAmount, " HP.")].concat(_toConsumableArray(state.log))
+  });
+}
 function generateStarterDeck(state) {
   var difficulty = state.difficulty;
   if (!difficulty || !difficultyModifiersMap[difficulty]) {
@@ -1086,38 +1487,38 @@ function generateStarterDeck(state) {
   var basicMonoCards = cardList.filter(function (card) {
     return card.rarity === RARITIES.BASIC_MONO;
   });
-  var _iterator = _createForOfIteratorHelper(basicMonoCards),
-    _step;
+  var _iterator2 = _createForOfIteratorHelper(basicMonoCards),
+    _step2;
   try {
-    for (_iterator.s(); !(_step = _iterator.n()).done;) {
-      var _card = _step.value;
+    for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
+      var _card = _step2.value;
       deck.push(createCardInstance(_card.name));
     }
 
     // 2. Add 3 of each basic poly card
   } catch (err) {
-    _iterator.e(err);
+    _iterator2.e(err);
   } finally {
-    _iterator.f();
+    _iterator2.f();
   }
   var basicPolyCards = cardList.filter(function (card) {
     return card.rarity === RARITIES.BASIC_POLY;
   });
-  var _iterator2 = _createForOfIteratorHelper(basicPolyCards),
-    _step2;
+  var _iterator3 = _createForOfIteratorHelper(basicPolyCards),
+    _step3;
   try {
-    for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
-      var _card2 = _step2.value;
-      for (var _i2 = 0; _i2 < 3; _i2++) {
+    for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
+      var _card2 = _step3.value;
+      for (var _i4 = 0; _i4 < 3; _i4++) {
         deck.push(createCardInstance(_card2.name));
       }
     }
 
     // 3. Add additional random basic poly cards based on difficulty
   } catch (err) {
-    _iterator2.e(err);
+    _iterator3.e(err);
   } finally {
-    _iterator2.f();
+    _iterator3.f();
   }
   for (var i = 0; i < modifiers.basicCardCountModifier; i++) {
     var card = generateRandomCard(state, {
@@ -1135,6 +1536,80 @@ function generateStarterDeck(state) {
       deck: shuffledDeck
     }),
     log: _toConsumableArray(state.log)
+  });
+}
+function chargeGoldPrice(state, price) {
+  var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : "purchase";
+  if (state.gold < price) {
+    console.warn("Not enough gold for ".concat(context, "!"));
+    return state; // return unmodified state
+  }
+  return _objectSpread(_objectSpread({}, state), {}, {
+    gold: state.gold - price,
+    // ✅ correct location
+    log: ["Spent ".concat(price, " gold on ").concat(context, ".")].concat(_toConsumableArray(state.log))
+  });
+}
+function addCardToCombatDeck(state, cardName) {
+  var _state$combat3;
+  var base = cardList.find(function (c) {
+    return c.name === cardName;
+  });
+  if (!base) {
+    console.warn("Could not find card \"".concat(cardName, "\""));
+    return state;
+  }
+  var newCard = createCardInstance(cardName);
+  var combatDeck = Array.isArray((_state$combat3 = state.combat) === null || _state$combat3 === void 0 ? void 0 : _state$combat3.deck) ? _toConsumableArray(state.combat.deck) : [];
+  var insertIndex = Math.floor(Math.random() * (combatDeck.length + 1));
+  combatDeck.splice(insertIndex, 0, newCard); // insert at random index
+
+  return _objectSpread(_objectSpread({}, state), {}, {
+    combat: _objectSpread(_objectSpread({}, state.combat), {}, {
+      deck: combatDeck
+    })
+  });
+}
+function assignShopPrices(state) {
+  var globalMultiplier = state.shopPriceMultiplier || 1;
+  var basePrices = {
+    card: 10,
+    potion: 20,
+    gem: 30,
+    relic: 100
+  };
+  var rarityMultipliers = {
+    common: 1,
+    uncommon: 1.2,
+    rare: 1.4,
+    mythic: 1.6,
+    legendary: 2
+  };
+  var updatedShopfront = state.offerings.shopfront.map(function (entry) {
+    var _item$rarity2, _item$rarity2$toLower;
+    var type = entry.type,
+      item = entry.item;
+    if (!item || !item.name) {
+      console.warn("Invalid shop item during price assignment:", entry);
+      return entry;
+    }
+    var basePrice = basePrices[type] || 0;
+    var upgrades = item.upgrades || 0;
+    var upgradeCost = ["card", "potion"].includes(type) ? upgrades * 5 : 0;
+    var rarity = ((_item$rarity2 = item.rarity) === null || _item$rarity2 === void 0 || (_item$rarity2$toLower = _item$rarity2.toLowerCase) === null || _item$rarity2$toLower === void 0 ? void 0 : _item$rarity2$toLower.call(_item$rarity2)) || "common";
+    var rarityMultiplier = rarityMultipliers[rarity] || 1;
+    var price = Math.round((basePrice + upgradeCost) * rarityMultiplier * globalMultiplier);
+    return _objectSpread(_objectSpread({}, entry), {}, {
+      item: _objectSpread(_objectSpread({}, item), {}, {
+        price: price
+      })
+    });
+  });
+  return _objectSpread(_objectSpread({}, state), {}, {
+    offerings: _objectSpread(_objectSpread({}, state.offerings), {}, {
+      shopfront: updatedShopfront
+    }),
+    log: ["Assigned prices to shop items."].concat(_toConsumableArray(state.log))
   });
 }
 function applyDifficultyModifiers(state) {
@@ -1199,7 +1674,7 @@ function handlePhaseTransitions(state) {
   }
 }
 function pickPath(state, index) {
-  var _state$level;
+  var _state$level2;
   var paths = state.offerings.paths;
   if (!paths || index < 0 || index >= paths.length) {
     console.error("Invalid path index:", index);
@@ -1213,7 +1688,7 @@ function pickPath(state, index) {
     return state;
   }
   return handlePhaseTransitions(_objectSpread(_objectSpread({}, state), {}, {
-    level: ((_state$level = state.level) !== null && _state$level !== void 0 ? _state$level : 0) + 1,
+    level: ((_state$level2 = state.level) !== null && _state$level2 !== void 0 ? _state$level2 : 0) + 1,
     currentPath: chosenPath,
     // ✅ store the path here
     currentPhase: pathData.leadsTo,
@@ -1338,14 +1813,14 @@ function populatePathOfferings(state) {
   }, pathMap[fightPathKey]);
 
   // === Step 2: Create pool of all valid paths (excluding duplicate of picked fight) ===
-  var allPaths = Object.entries(pathMap).filter(function (_ref4) {
-    var _ref5 = _slicedToArray(_ref4, 1),
-      key = _ref5[0];
+  var allPaths = Object.entries(pathMap).filter(function (_ref5) {
+    var _ref6 = _slicedToArray(_ref5, 1),
+      key = _ref6[0];
     return key !== fightPathKey;
-  }).map(function (_ref6) {
-    var _ref7 = _slicedToArray(_ref6, 2),
-      path = _ref7[0],
-      data = _ref7[1];
+  }).map(function (_ref7) {
+    var _ref8 = _slicedToArray(_ref7, 2),
+      path = _ref8[0],
+      data = _ref8[1];
     return _objectSpread({
       path: path
     }, data);
@@ -1371,7 +1846,7 @@ function populatePathOfferings(state) {
   var chosenPaths = [];
   var usedPaths = new Set([fightPathKey]);
   var _loop3 = function _loop3() {
-    var rarity = _chosenRarities[_i3];
+    var rarity = _chosenRarities[_i5];
     var candidates = filteredPaths.filter(function (p) {
       return p.rarity === rarity && !usedPaths.has(p.path);
     });
@@ -1381,7 +1856,7 @@ function populatePathOfferings(state) {
       chosenPaths.push(pick);
     }
   };
-  for (var _i3 = 0, _chosenRarities = chosenRarities; _i3 < _chosenRarities.length; _i3++) {
+  for (var _i5 = 0, _chosenRarities = chosenRarities; _i5 < _chosenRarities.length; _i5++) {
     _loop3();
   }
 
@@ -1481,19 +1956,19 @@ function populatePathOfferings(state) {
   var updatedState = _objectSpread({}, triggerResult);
 
   // Final sanity check for undefineds
-  var _iterator3 = _createForOfIteratorHelper(updatedPaths),
-    _step3;
+  var _iterator4 = _createForOfIteratorHelper(updatedPaths),
+    _step4;
   try {
-    for (_iterator3.s(); !(_step3 = _iterator3.n()).done;) {
-      var path = _step3.value;
+    for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
+      var path = _step4.value;
       if (!path || !path.path) {
         console.warn("⚠️ Invalid path in final offerings:", path);
       }
     }
   } catch (err) {
-    _iterator3.e(err);
+    _iterator4.e(err);
   } finally {
-    _iterator3.f();
+    _iterator4.f();
   }
   console.log("📍 Populating path offerings with:", updatedPaths);
   return _objectSpread(_objectSpread({}, updatedState), {}, {
@@ -1969,8 +2444,8 @@ function populateShopfront(state) {
     gem: 3,
     relic: 3
   };
-  for (var _i4 = 0, _Object$entries = Object.entries(typeCounts); _i4 < _Object$entries.length; _i4++) {
-    var _Object$entries$_i = _slicedToArray(_Object$entries[_i4], 2),
+  for (var _i6 = 0, _Object$entries = Object.entries(typeCounts); _i6 < _Object$entries.length; _i6++) {
+    var _Object$entries$_i = _slicedToArray(_Object$entries[_i6], 2),
       type = _Object$entries$_i[0],
       count = _Object$entries$_i[1];
     for (var i = 0; i < count; i++) {
@@ -1981,8 +2456,8 @@ function populateShopfront(state) {
   // === Step 3: Generate actual items, avoiding duplicates ===
   var generatedItems = [];
   var usedKeys = new Set();
-  for (var _i5 = 0, _shopfrontTypes = shopfrontTypes; _i5 < _shopfrontTypes.length; _i5++) {
-    var _type = _shopfrontTypes[_i5];
+  for (var _i7 = 0, _shopfrontTypes = shopfrontTypes; _i7 < _shopfrontTypes.length; _i7++) {
+    var _type = _shopfrontTypes[_i7];
     var item = null;
     var attempt = 0;
     while (attempt < 20) {
@@ -2127,7 +2602,7 @@ function createInitialState() {
     difficulty: null,
     maxHealth: 0,
     health: 0,
-    baseBunnies: 10000,
+    baseBunnies: 0,
     gold: 100,
     luck: 0,
     level: 0,
@@ -2297,9 +2772,9 @@ function getRandomBossRelic() {
   return _objectSpread({}, chosen);
 }
 function generateRandomRelic(state) {
-  var _ref8 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
-    _ref8$rarity = _ref8.rarity,
-    rarity = _ref8$rarity === void 0 ? null : _ref8$rarity;
+  var _ref9 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
+    _ref9$rarity = _ref9.rarity,
+    rarity = _ref9$rarity === void 0 ? null : _ref9$rarity;
   var luck = state.luck || 0;
   var ownedRelics = new Set([].concat(_toConsumableArray(state.relicBelt.map(function (r) {
     return r.name;
@@ -2337,17 +2812,17 @@ function generateRandomRelic(state) {
   return _objectSpread({}, chosen);
 }
 function generateRandomCard(state) {
-  var _state$level2, _state$defeatedEnemie2;
-  var _ref9 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
-    _ref9$rarity = _ref9.rarity,
-    rarity = _ref9$rarity === void 0 ? null : _ref9$rarity,
-    _ref9$upgrades = _ref9.upgrades,
-    upgrades = _ref9$upgrades === void 0 ? undefined : _ref9$upgrades,
-    _ref9$gem = _ref9.gem,
-    gem = _ref9$gem === void 0 ? null : _ref9$gem;
+  var _state$level3, _state$defeatedEnemie2;
+  var _ref0 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
+    _ref0$rarity = _ref0.rarity,
+    rarity = _ref0$rarity === void 0 ? null : _ref0$rarity,
+    _ref0$upgrades = _ref0.upgrades,
+    upgrades = _ref0$upgrades === void 0 ? undefined : _ref0$upgrades,
+    _ref0$gem = _ref0.gem,
+    gem = _ref0$gem === void 0 ? null : _ref0$gem;
   var luck = state.luck || 0;
   var finalRarity = rarity || weightedRandomChoice(getLuckAdjustedRarityWeights(luck));
-  var level = (_state$level2 = state.level) !== null && _state$level2 !== void 0 ? _state$level2 : 0;
+  var level = (_state$level3 = state.level) !== null && _state$level3 !== void 0 ? _state$level3 : 0;
   var totalFortune = (luck !== null && luck !== void 0 ? luck : 0) + level;
   var upgradeWeights = {
     0: Math.max(0, 60 - totalFortune),
@@ -2363,15 +2838,15 @@ function generateRandomCard(state) {
   return createCardInstance(undefined, finalRarity, cappedUpgrades, gem);
 }
 function generateRandomPotion(state) {
-  var _state$level3;
-  var _ref0 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
-    _ref0$rarity = _ref0.rarity,
-    rarity = _ref0$rarity === void 0 ? null : _ref0$rarity,
-    _ref0$upgrades = _ref0.upgrades,
-    upgrades = _ref0$upgrades === void 0 ? null : _ref0$upgrades;
+  var _state$level4;
+  var _ref1 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
+    _ref1$rarity = _ref1.rarity,
+    rarity = _ref1$rarity === void 0 ? null : _ref1$rarity,
+    _ref1$upgrades = _ref1.upgrades,
+    upgrades = _ref1$upgrades === void 0 ? null : _ref1$upgrades;
   var luck = state.luck || 0;
   var rarityWeights = getLuckAdjustedRarityWeights(luck);
-  var level = (_state$level3 = state.level) !== null && _state$level3 !== void 0 ? _state$level3 : 0;
+  var level = (_state$level4 = state.level) !== null && _state$level4 !== void 0 ? _state$level4 : 0;
   var totalFortune = (luck !== null && luck !== void 0 ? luck : 0) + level;
   var upgradeWeights = {
     0: Math.max(0, 70 - totalFortune),
@@ -2413,9 +2888,9 @@ function generateRandomPotion(state) {
   return createPotionInstance(basePotion.name, upgrades);
 }
 function generateRandomGem(state) {
-  var _ref1 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
-    _ref1$rarity = _ref1.rarity,
-    rarity = _ref1$rarity === void 0 ? null : _ref1$rarity;
+  var _ref10 = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
+    _ref10$rarity = _ref10.rarity,
+    rarity = _ref10$rarity === void 0 ? null : _ref10$rarity;
   var luck = state.luck || 0;
   var fallbackGem = createGemInstance("Amethyst");
 
@@ -2752,19 +3227,19 @@ function socketCardWithGem(card, gem) {
   // === Merge damageTypes (if gem has them) ===
   if (Array.isArray(gem.damageTypes)) {
     socketedCard.damageTypes = Array.isArray(socketedCard.damageTypes) ? _toConsumableArray(socketedCard.damageTypes) : [];
-    var _iterator4 = _createForOfIteratorHelper(gem.damageTypes),
-      _step4;
+    var _iterator5 = _createForOfIteratorHelper(gem.damageTypes),
+      _step5;
     try {
-      for (_iterator4.s(); !(_step4 = _iterator4.n()).done;) {
-        var dmgType = _step4.value;
+      for (_iterator5.s(); !(_step5 = _iterator5.n()).done;) {
+        var dmgType = _step5.value;
         if (!socketedCard.damageTypes.includes(dmgType)) {
           socketedCard.damageTypes.push(dmgType);
         }
       }
     } catch (err) {
-      _iterator4.e(err);
+      _iterator5.e(err);
     } finally {
-      _iterator4.f();
+      _iterator5.f();
     }
   }
 
@@ -2805,380 +3280,6 @@ function getLuckAdjustedRarityWeights() {
   var luck = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
   return _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({}, RARITIES.COMMON, Math.max(20, 60 - luck * 2)), RARITIES.UNCOMMON, Math.max(20, 40 - luck)), RARITIES.RARE, Math.min(20, 5 + luck)), RARITIES.MYTHIC, Math.min(10, 2 + Math.ceil(luck / 2))), RARITIES.LEGENDARY, Math.min(5, 1 + Math.ceil(luck / 3)));
 }
-function chargeGoldPrice(state, price) {
-  var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : "purchase";
-  if (state.gold < price) {
-    console.warn("Not enough gold for ".concat(context, "!"));
-    return state; // return unmodified state
-  }
-  return _objectSpread(_objectSpread({}, state), {}, {
-    gold: state.gold - price,
-    // ✅ correct location
-    log: ["Spent ".concat(price, " gold on ").concat(context, ".")].concat(_toConsumableArray(state.log))
-  });
-}
-function checkRelicTriggers(state, triggerEvent) {
-  var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {
-    damageType: null
-  };
-  var updatedState = _objectSpread({}, state);
-  var result = context.payload || null;
-  if (!Array.isArray(state.relicBelt)) {
-    console.error("❌ relicBelt is not an array!", state.relicBelt);
-  } else {
-    console.log("👜 Current relic belt:", state.relicBelt.map(function (r) {
-      return r.name || r;
-    }));
-  }
-
-  // === Special case: Relic is being picked up ===
-  if (triggerEvent === TRIGGER_EVENTS.RELIC_PICKUP && context.relic) {
-    var _relic$triggers, _updatedState$offerin;
-    var relic = context.relic;
-    var effect = (_relic$triggers = relic.triggers) === null || _relic$triggers === void 0 ? void 0 : _relic$triggers[triggerEvent];
-    if (!effect) return _objectSpread(_objectSpread({}, updatedState), {}, {
-      result: result
-    });
-    var campaign = _objectSpread({}, updatedState.campaign);
-    var newHealth = updatedState.health;
-    var newMaxHealth = updatedState.maxHealth;
-    if (effect.reduceInkCostOfFireCardsInDeck > 0) {
-      var modifiedCount = 0;
-      campaign.deck = campaign.deck.map(function (card) {
-        if (Array.isArray(card.damageTypes) && card.damageTypes.includes(DAMAGE_TYPES.FIRE) && typeof card.inkCost === "number") {
-          modifiedCount++;
-          return _objectSpread(_objectSpread({}, card), {}, {
-            inkCost: Math.max(0, card.inkCost - effect.reduceInkCostOfFireCardsInDeck)
-          });
-        }
-        return card;
-      });
-      if (modifiedCount > 0) {
-        updatedState.log.unshift("".concat(relic.name, " reduced the ink cost of ").concat(modifiedCount, " fire card(s) in your deck."));
-      }
-    }
-    if (effect.bonusPages) {
-      campaign.pages += effect.bonusPages;
-      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusPages, " max pages."));
-    }
-    if (effect.BonusMulligans) {
-      var _campaign$mulligans;
-      campaign.mulligans = ((_campaign$mulligans = campaign.mulligans) !== null && _campaign$mulligans !== void 0 ? _campaign$mulligans : 0) + effect.BonusMulligans;
-      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.BonusMulligans, " mulligan."));
-    }
-    if (effect.bonusInk) {
-      campaign.ink += effect.bonusInk;
-      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusInk, " max ink."));
-    }
-    if (effect.bonusBooks) {
-      campaign.books += effect.bonusBooks;
-      updatedState.log.unshift("".concat(relic.name, " gave you +").concat(effect.bonusBooks, " max books."));
-    }
-    if (effect.bonusHandSize) {
-      campaign.handSize += effect.bonusHandSize;
-      updatedState.log.unshift("".concat(relic.name, " increased your hand size by ").concat(effect.bonusHandSize, "."));
-    }
-    if (effect.bonusHealth) {
-      newHealth += effect.bonusHealth;
-      newMaxHealth += effect.bonusHealth;
-      updatedState.log.unshift("".concat(relic.name, " increased your max health by ").concat(effect.bonusHealth, " HP."));
-    }
-    if (effect.bonusGold) {
-      updatedState = gainGold(updatedState, effect.bonusGold);
-      updatedState.log.unshift("".concat(relic.name, " gave you ").concat(effect.bonusGold, " gold."));
-    }
-    if (effect.bonusBaseBunnies) {
-      updatedState = increaseBaseBunnies(updatedState, effect.bonusBaseBunnies);
-      updatedState.log.unshift("".concat(relic.name, " added ").concat(effect.bonusBaseBunnies, " base bunnies."));
-    }
-    if (effect.permanentlyUpgradeRandomCardsInDeck > 0) {
-      var deck = campaign.deck;
-      var numToUpgrade = Math.min(effect.permanentlyUpgradeRandomCardsInDeck, deck.length);
-      campaign.deck = permanentlyUpgradeRandomCardsInDeck(deck, numToUpgrade);
-      updatedState.log.unshift("".concat(relic.name, " permanently upgraded ").concat(numToUpgrade, " card(s) in your deck."));
-    }
-    if (effect.shopPriceMultiplier && state.currentPhase === PHASES.SHOP && (_updatedState$offerin = updatedState.offerings) !== null && _updatedState$offerin !== void 0 && _updatedState$offerin.shopfront) {
-      var newMultiplier = getShopPriceMultiplier(updatedState);
-      var updatedShopfront = updatedState.offerings.shopfront.map(function (entry) {
-        var _item$rarity2, _item$rarity2$toLower;
-        var type = entry.type,
-          item = entry.item;
-        var basePrices = {
-          card: 10,
-          potion: 20,
-          gem: 30,
-          relic: 100
-        };
-        var rarityMultipliers = {
-          common: 1,
-          uncommon: 1.2,
-          rare: 1.4,
-          mythic: 1.6,
-          legendary: 2
-        };
-        var basePrice = basePrices[type] || 0;
-        var upgrades = item.upgrades || 0;
-        var upgradeCost = ["card", "potion"].includes(type) ? upgrades * 5 : 0;
-        var rarity = ((_item$rarity2 = item.rarity) === null || _item$rarity2 === void 0 || (_item$rarity2$toLower = _item$rarity2.toLowerCase) === null || _item$rarity2$toLower === void 0 ? void 0 : _item$rarity2$toLower.call(_item$rarity2)) || "common";
-        var rarityMultiplier = rarityMultipliers[rarity] || 1;
-        var price = Math.round((basePrice + upgradeCost) * rarityMultiplier * newMultiplier);
-        return _objectSpread(_objectSpread({}, entry), {}, {
-          item: _objectSpread(_objectSpread({}, item), {}, {
-            price: price
-          })
-        });
-      });
-      updatedState.offerings.shopfront = updatedShopfront;
-      updatedState.log.unshift("".concat(relic.name, " triggered and updated shop prices."));
-    }
-    updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-      campaign: campaign,
-      health: newHealth,
-      maxHealth: newMaxHealth
-    });
-    return _objectSpread(_objectSpread({}, updatedState), {}, {
-      result: result
-    });
-  }
-
-  // === General case: loop through all relics and handle triggers ===
-  var _iterator5 = _createForOfIteratorHelper(updatedState.relicBelt),
-    _step5;
-  try {
-    for (_iterator5.s(); !(_step5 = _iterator5.n()).done;) {
-      var _relic$triggers2;
-      var _relic = _step5.value;
-      if (!_relic.triggers || _typeof(_relic.triggers) !== "object") continue;
-      var allTriggerKeys = Object.keys(_relic.triggers);
-      var _effect = (_relic$triggers2 = _relic.triggers) === null || _relic$triggers2 === void 0 ? void 0 : _relic$triggers2[triggerEvent];
-      if (!_effect) continue;
-
-      // === Handle Lightning spell draw trigger
-      if (triggerEvent === TRIGGER_EVENTS.PLAY_CARD && _effect.ifLightningDrawCards > 0) {
-        var card = context.card || context.payload;
-        var isLightning = Array.isArray(card === null || card === void 0 ? void 0 : card.damageTypes) && card.damageTypes.includes(DAMAGE_TYPES.LIGHTNING);
-        if (isLightning) {
-          updatedState.log.unshift("".concat(_relic.name, " triggered and drew ").concat(_effect.ifLightningDrawCards, " card").concat(_effect.ifLightningDrawCards > 1 ? "s" : "", " because you played a Lightning card!"));
-          for (var i = 0; i < _effect.ifLightningDrawCards; i++) {
-            updatedState = drawCard(updatedState);
-          }
-        }
-      }
-      // potion pickup triggers
-      if (triggerEvent === TRIGGER_EVENTS.POTION_PICKUP && _effect.upgradePotion) {
-        var potion = context.potion || context.payload;
-        if (potion) {
-          var upgraded = upgradePotion(potion, 1);
-          updatedState.log.unshift("".concat(_relic.name, " upgraded ").concat(potion.name, " into ").concat(upgraded.name, "."));
-          result = upgraded;
-        } else {
-          console.warn("\u26A0\uFE0F ".concat(_relic.name, " triggered upgradePotion but no potion provided."));
-        }
-      }
-
-      // === Other trigger types
-      if (triggerEvent === TRIGGER_EVENTS.COMBAT_START && _effect.weakenEnemyHpPercent > 0) {
-        updatedState = weakenEnemyByPercent(updatedState, _effect.weakenEnemyHpPercent);
-        updatedState.log.unshift("".concat(_relic.name, " weakened the enemy by ").concat(_effect.weakenEnemyHpPercent * 100, "%!"));
-      }
-      if (_effect.bunnyAdd) {
-        updatedState.combat = _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          bunnies: (updatedState.combat.bunnies || 0) + _effect.bunnyAdd
-        });
-        updatedState.log.unshift("".concat(_relic.name, " summoned ").concat(_effect.bunnyAdd, " bunny").concat(_effect.bunnyAdd === 1 ? "" : "ies", "!"));
-      }
-      if (_effect.permanentlyUpgradeRandomCardsInDeck > 0) {
-        var _campaign = _objectSpread({}, updatedState.campaign);
-        var _deck = _campaign.deck;
-        var _numToUpgrade = Math.min(_effect.permanentlyUpgradeRandomCardsInDeck, _deck.length);
-        _campaign.deck = permanentlyUpgradeRandomCardsInDeck(_deck, _numToUpgrade);
-        updatedState.campaign = _campaign;
-        updatedState.log.unshift("".concat(_relic.name, " permanently upgraded ").concat(_numToUpgrade, " card(s) in your deck."));
-      }
-
-      // === Support for Whetstone ===
-      if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP && _effect.upgradeCard) {
-        var cardToUpgrade = context.card || context.payload;
-        if (cardToUpgrade) {
-          console.log("\uD83E\uDE93 ".concat(_relic.name, " is upgrading a picked-up card: ").concat(cardToUpgrade.name));
-          var _upgraded = upgradeCard(cardToUpgrade, 1);
-          updatedState.log.unshift("".concat(_relic.name, " upgraded ").concat(cardToUpgrade.name, " into ").concat(_upgraded.name, "."));
-          result = _upgraded;
-        } else {
-          console.warn("\u26A0\uFE0F ".concat(_relic.name, " triggered upgradeCard but no card was provided."));
-        }
-      }
-
-      // === Support for Dousing Rod ===
-      if (triggerEvent === TRIGGER_EVENTS.POPULATE_PATHS && _effect.revealAnonymousPaths) {
-        var currentPaths = context.payload || [];
-        result = {
-          paths: revealAnonymousPaths(currentPaths)
-        };
-        updatedState.log.unshift("".concat(_relic.name, " revealed anonymous paths!"));
-      }
-
-      // === Support for Porcelain Koi ===
-      if (triggerEvent === TRIGGER_EVENTS.CARD_PICKUP) {
-        var pickedCard = context.card || context.payload;
-        if (_effect.bonusHealth) {
-          updatedState.health += _effect.bonusHealth;
-          updatedState.maxHealth += _effect.bonusHealth;
-          updatedState.log.unshift("".concat(_relic.name, " increased your max health by ").concat(_effect.bonusHealth).concat(pickedCard !== null && pickedCard !== void 0 && pickedCard.name ? " (from picking ".concat(pickedCard.name, ")") : "", "."));
-        }
-        if (_effect.bonusGold) {
-          updatedState = gainGold(updatedState, _effect.bonusGold);
-          updatedState.log.unshift("".concat(_relic.name, " granted you ").concat(_effect.bonusGold, " gold").concat(pickedCard !== null && pickedCard !== void 0 && pickedCard.name ? " (from picking ".concat(pickedCard.name, ")") : "", "."));
-        }
-      }
-
-      // === Add additional relic effects here ===
-    }
-  } catch (err) {
-    _iterator5.e(err);
-  } finally {
-    _iterator5.f();
-  }
-  return _objectSpread(_objectSpread({}, updatedState), {}, {
-    result: result
-  });
-}
-function checkEnemyTriggers(state, triggerEvent) {
-  var _updatedState$combat;
-  var context = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
-  var updatedState = _objectSpread({}, state);
-  var enemy = (_updatedState$combat = updatedState.combat) === null || _updatedState$combat === void 0 ? void 0 : _updatedState$combat.enemy;
-  if (!enemy) return updatedState;
-  var abilities = enemy.abilities || {};
-  var logMessages = [];
-  if (triggerEvent === TRIGGER_EVENTS.COMBAT_START) {
-    // Ink Drink effect
-    if (abilities[ENEMY_ABILITIES.INK_DRINK]) {
-      var amount = abilities[ENEMY_ABILITIES.INK_DRINK];
-      var newMaxInk = Math.max(0, updatedState.combat.maxInk - amount);
-      var newInk = Math.min(updatedState.combat.ink, newMaxInk); // Ensure current ink doesn't exceed new max
-
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          maxInk: newMaxInk,
-          ink: newInk
-        })
-      });
-      logMessages.push("".concat(enemy.name, " drained ").concat(amount, " max ink at the start of combat!"));
-    }
-
-    // Increase Health effect
-    if (abilities[ENEMY_ABILITIES.INCREASE_HEALTH]) {
-      var multiplier = abilities[ENEMY_ABILITIES.INCREASE_HEALTH]; // e.g., 1.5
-
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          enemyHp: Math.floor(updatedState.combat.enemyHp * multiplier),
-          enemy: _objectSpread(_objectSpread({}, updatedState.combat.enemy), {}, {
-            hp: Math.floor(updatedState.combat.enemy.hp * multiplier)
-          })
-        })
-      });
-      logMessages.push("".concat(enemy.name, " increased its health by ").concat(Math.round((multiplier - 1) * 100), "%!"));
-    }
-
-    // Downgrade Cards at Combat Start
-    if (abilities[ENEMY_ABILITIES.DOWNGRADE_CARDS]) {
-      var _amount = abilities[ENEMY_ABILITIES.DOWNGRADE_CARDS];
-      var deck = _toConsumableArray(updatedState.combat.deck);
-      var downgradable = deck.filter(function (card) {
-        return !card.undowngradable;
-      });
-      var shuffled = _toConsumableArray(downgradable).sort(function () {
-        return Math.random() - 0.5;
-      });
-      var toDowngrade = shuffled.slice(0, _amount);
-      var updatedDeck = deck.map(function (card) {
-        return toDowngrade.includes(card) ? downgradeCard(card, 1) : card;
-      });
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          deck: updatedDeck
-        })
-      });
-      logMessages.push("".concat(enemy.name, " downgraded ").concat(toDowngrade.length, " card(s) in your deck!"));
-    }
-
-    // Hand Size Reduction
-    if (abilities[ENEMY_ABILITIES.HAND_SIZE_REDUCTION]) {
-      var _amount2 = abilities[ENEMY_ABILITIES.HAND_SIZE_REDUCTION];
-      updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-        combat: _objectSpread(_objectSpread({}, updatedState.combat), {}, {
-          handSize: Math.max(1, updatedState.combat.handSize - _amount2)
-        })
-      });
-      logMessages.push("".concat(enemy.name, " reduces your hand size by ").concat(_amount2, "!"));
-    }
-
-    // === Add curses at combat start ===
-    if (triggerEvent === TRIGGER_EVENTS.COMBAT_START) {
-      var _abilities = enemy.abilities || {};
-      if (_abilities[ENEMY_ABILITIES.ADD_PEBBLES]) {
-        var _amount3 = _abilities[ENEMY_ABILITIES.ADD_PEBBLES];
-        for (var i = 0; i < _amount3; i++) {
-          updatedState = addCardToCombatDeck(updatedState, "Sisyphus' Pebble");
-        }
-        logMessages.push("".concat(enemy.name, " added ").concat(_amount3, " Sisyphus' Pebble to your deck!"));
-      }
-      if (_abilities[ENEMY_ABILITIES.ADD_MERCURY]) {
-        var _amount4 = _abilities[ENEMY_ABILITIES.ADD_MERCURY];
-        for (var _i6 = 0; _i6 < _amount4; _i6++) {
-          updatedState = addCardToCombatDeck(updatedState, "Mercury Droplet");
-        }
-        logMessages.push("".concat(enemy.name, " added ").concat(_amount4, " Mercury Droplet(s) to your deck!"));
-      }
-      if (_abilities[ENEMY_ABILITIES.ADD_CLUTTER]) {
-        var _amount5 = _abilities[ENEMY_ABILITIES.ADD_CLUTTER];
-        for (var _i7 = 0; _i7 < _amount5; _i7++) {
-          updatedState = addCardToCombatDeck(updatedState, "Clutter");
-        }
-        logMessages.push("".concat(enemy.name, " added ").concat(_amount5, " Clutter card(s) to your deck!"));
-      }
-    }
-  }
-  if (logMessages.length > 0) {
-    updatedState = _objectSpread(_objectSpread({}, updatedState), {}, {
-      log: ["\u26A0\uFE0F Enemy ability activated!"].concat(logMessages, _toConsumableArray(updatedState.log))
-    });
-  }
-  return updatedState;
-}
-function modifyCombatInk(state, amount) {
-  var _state$combat$ink, _state$combat, _state$combat$maxInk, _state$combat2;
-  var current = (_state$combat$ink = (_state$combat = state.combat) === null || _state$combat === void 0 ? void 0 : _state$combat.ink) !== null && _state$combat$ink !== void 0 ? _state$combat$ink : 0;
-  var max = (_state$combat$maxInk = (_state$combat2 = state.combat) === null || _state$combat2 === void 0 ? void 0 : _state$combat2.maxInk) !== null && _state$combat$maxInk !== void 0 ? _state$combat$maxInk : 0;
-  var newInk = Math.max(0, Math.min(current + amount, max));
-  var actualChange = newInk - current;
-
-  // let changeMessage =
-  //   actualChange === 0
-  //     ? `Ink unchanged.`
-  //     : actualChange > 0
-  //     ? `Gained ${actualChange} ink.`
-  //     : `Spent ${Math.abs(actualChange)} ink.`;
-
-  return _objectSpread(_objectSpread({}, state), {}, {
-    combat: _objectSpread(_objectSpread({}, state.combat), {}, {
-      ink: newInk
-    })
-    // log: [changeMessage, ...state.log],
-  });
-}
-function heal(state, amount) {
-  var current = state.health || 0;
-  var max = state.maxHealth || 0;
-  var newHealth = Math.min(current + amount, max);
-  var healedAmount = newHealth - current;
-  return _objectSpread(_objectSpread({}, state), {}, {
-    health: newHealth,
-    log: ["Healed ".concat(healedAmount, " HP.")].concat(_toConsumableArray(state.log))
-  });
-}
 function transmuteCard(card) {
   if (!card || !card.name) {
     console.error("Invalid card passed to transmuteCard:", card);
@@ -3198,72 +3299,6 @@ function transmuteCard(card) {
   }
   var newBase = alternatives[Math.floor(Math.random() * alternatives.length)];
   return createCardInstance(newBase.name, null, card.upgrades, card.gem);
-}
-function purgeCard(state, card) {
-  if (!card || !card.name) {
-    console.error("Invalid card passed to purgeCard:", card);
-    return state;
-  }
-  var updatedDeck = state.campaign.deck.filter(function (c) {
-    return c !== card;
-  });
-  var updatedTrash = [].concat(_toConsumableArray(state.trashPile || []), [card]);
-  return _objectSpread(_objectSpread({}, state), {}, {
-    campaign: _objectSpread(_objectSpread({}, state.campaign), {}, {
-      deck: updatedDeck,
-      trashPile: updatedTrash
-    }),
-    log: ["Purged card: ".concat(card.name)].concat(_toConsumableArray(state.log))
-  });
-}
-function initializeCombatPhase(state, path) {
-  var _state$level4, _state$stage, _state$campaign$mulli, _state$baseBunnies;
-  var level = (_state$level4 = state.level) !== null && _state$level4 !== void 0 ? _state$level4 : 1;
-  var stage = (_state$stage = state.stage) !== null && _state$stage !== void 0 ? _state$stage : 0;
-
-  // Define ability power modifier based on level
-  var modifyEnemyAbilityPower = function modifyEnemyAbilityPower(_ref11) {
-    var currentValue = _ref11.currentValue;
-    if (stage === 2) return currentValue + 2;
-    if (stage === 1) return currentValue + 1;
-    return currentValue;
-  };
-  var enemy = generateEnemy(state, path, modifyEnemyAbilityPower);
-
-  // Deep copy and shuffle the deck
-  var deepDeckCopy = JSON.parse(JSON.stringify(state.campaign.deck));
-  var shuffledDeck = shuffleArray(deepDeckCopy);
-  var newCombat = {
-    enemy: enemy,
-    enemyHp: enemy.hp,
-    deck: shuffledDeck,
-    hand: [],
-    graveyard: [],
-    // was 'discard' but rest of code uses 'graveyard'
-    exile: [],
-    mulligans: (_state$campaign$mulli = state.campaign.mulligans) !== null && _state$campaign$mulli !== void 0 ? _state$campaign$mulli : 0,
-    ink: state.campaign.ink,
-    maxInk: state.campaign.ink,
-    books: state.campaign.books,
-    maxBooks: state.campaign.books,
-    pages: state.campaign.pages,
-    maxPages: state.campaign.pages,
-    handSize: state.campaign.handSize,
-    baseBunnies: (_state$baseBunnies = state.baseBunnies) !== null && _state$baseBunnies !== void 0 ? _state$baseBunnies : 0,
-    bunnies: 0,
-    combatEnded: false
-  };
-  var newState = _objectSpread(_objectSpread({}, state), {}, {
-    combat: newCombat,
-    log: ["\u2694\uFE0F Combat begins against ".concat(enemy.name, "!")].concat(_toConsumableArray(state.log))
-  });
-  newState = checkRelicTriggers(newState, TRIGGER_EVENTS.COMBAT_START);
-  newState = checkEnemyTriggers(newState, TRIGGER_EVENTS.COMBAT_START);
-  console.log("🛠️ Starting combat with baseBunnies =", newCombat.baseBunnies);
-
-  // Start the player's turn (draw hand, refill ink, setup spellbook, etc.)
-  newState = startTurn(newState);
-  return newState;
 }
 function generateEnemy(state, path) {
   var _pathMap$path$path, _state$level5, _state$stage2, _state$enemyHealthMul, _baseHealthMap$diffic, _perLevelIncrement$di, _perStageMultiplier$s;
@@ -3580,26 +3615,6 @@ function permanentlyUpgradeRandomCardsInDeck(deck) {
     return index !== -1 ? upgradedCards[index] : card;
   });
 }
-function addCardToCombatDeck(state, cardName) {
-  var _state$combat3;
-  var base = cardList.find(function (c) {
-    return c.name === cardName;
-  });
-  if (!base) {
-    console.warn("Could not find card \"".concat(cardName, "\""));
-    return state;
-  }
-  var newCard = createCardInstance(cardName);
-  var combatDeck = Array.isArray((_state$combat3 = state.combat) === null || _state$combat3 === void 0 ? void 0 : _state$combat3.deck) ? _toConsumableArray(state.combat.deck) : [];
-  var insertIndex = Math.floor(Math.random() * (combatDeck.length + 1));
-  combatDeck.splice(insertIndex, 0, newCard); // insert at random index
-
-  return _objectSpread(_objectSpread({}, state), {}, {
-    combat: _objectSpread(_objectSpread({}, state.combat), {}, {
-      deck: combatDeck
-    })
-  });
-}
 
 //#endregion
 //#region game reducer
@@ -3727,738 +3742,6 @@ function gameReducer(state, action) {
       return state;
   }
 }
-//#endregion
-//#region render function
-function render(state, dispatch) {
-  var _state$campaign$deck4, _state$level7, _state$modData3;
-  // Get or create output div
-  var output = document.getElementById("output");
-  if (!output) {
-    output = document.createElement("div");
-    output.id = "output";
-    document.body.appendChild(output);
-  }
-  output.innerHTML = ""; // Clear previous contents
-  // //check and see if all cards in the deck are socketed
-  var allCardsSocketed = ((_state$campaign$deck4 = state.campaign.deck) === null || _state$campaign$deck4 === void 0 ? void 0 : _state$campaign$deck4.length) > 0 && state.campaign.deck.every(function (card) {
-    return card.gem != null || card.unsocketable;
-  });
-
-  //
-  function renderCardList(title, cards) {
-    var section = document.createElement("div");
-    section.innerHTML = "<h3>".concat(title, "</h3>");
-    var ul = document.createElement("ul");
-    cards.forEach(function (card) {
-      var li = document.createElement("li");
-      li.textContent = card.name;
-      ul.appendChild(li);
-    });
-    section.appendChild(ul);
-    output.appendChild(section);
-  }
-
-  // render utility function
-  function renderModPhaseEntry(phase, label, modKey) {
-    if (state.currentPhase === phase && state.currentScreen !== SCREENS.MOD) {
-      var modBtn = document.createElement("button");
-      modBtn.textContent = label;
-      modBtn.style.fontSize = "1.5rem";
-      modBtn.style.padding = "1rem 2rem";
-      modBtn.onclick = function () {
-        modBtn.disabled = true; // prevent double click
-        dispatch({
-          type: ACTIONS.OPEN_MOD_SCREEN,
-          payload: {
-            mod: _defineProperty({}, modKey, true),
-            origin: phase
-          }
-        });
-      };
-      output.appendChild(modBtn);
-    }
-  }
-
-  // === Game Info ===
-  var info = document.createElement("div");
-  info.innerHTML = "\n  <h2>Game Info</h2>\n  <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n  <p><strong>Phase:</strong> ").concat(state.currentPhase, " &nbsp;&nbsp; <strong>Level:</strong> ").concat((_state$level7 = state.level) !== null && _state$level7 !== void 0 ? _state$level7 : 0, "</p>\n  <p><strong>Gold:</strong> ").concat(state.gold, "</p>\n  <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n  <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n  <p><strong>Relics:</strong> ").concat(state.relicBelt.length > 0 ? Object.entries(state.relicBelt.reduce(function (acc, relic) {
-    acc[relic.name] = (acc[relic.name] || 0) + 1;
-    return acc;
-  }, {})).map(function (_ref16) {
-    var _ref17 = _slicedToArray(_ref16, 2),
-      name = _ref17[0],
-      count = _ref17[1];
-    return count > 1 ? "".concat(name, " x").concat(count) : name;
-  }).join(", ") : "None", "</p>\n");
-  output.appendChild(info);
-
-  // === Combat Display ===
-  var isCombatInspectScreen = [SCREENS.COMBAT_DECK, SCREENS.GRAVEYARD, SCREENS.EXILE].includes(state.currentScreen);
-  if (state.currentPhase === PHASES.COMBAT && state.combat) {
-    var combatSection = document.createElement("div");
-    combatSection.style.border = "2px solid black";
-    combatSection.style.padding = "1rem";
-    combatSection.style.margin = "1rem 0";
-    combatSection.innerHTML = "<h3>Combat</h3>";
-
-    // === Main Combat UI (skip if inspecting)
-    if (!isCombatInspectScreen) {
-      var _state$combat4, _state$combat$mulliga, _state$combat5;
-      // Enemy Name + HP (on same line)
-      var enemyBox = document.createElement("div");
-      enemyBox.style.display = "flex";
-      enemyBox.style.justifyContent = "space-between";
-      enemyBox.style.alignItems = "center";
-      enemyBox.style.fontSize = "1.5rem";
-      enemyBox.style.fontWeight = "bold";
-      enemyBox.style.border = "1px solid red";
-      enemyBox.style.padding = "1rem";
-      enemyBox.style.marginBottom = "1rem";
-
-      // Enemy name
-      var nameSpan = document.createElement("span");
-      nameSpan.textContent = state.combat.enemy.name;
-
-      // Enemy HP
-      var hpSpan = document.createElement("span");
-      hpSpan.textContent = "HP: ".concat(state.combat.enemyHp);
-      enemyBox.appendChild(nameSpan);
-      enemyBox.appendChild(hpSpan);
-      combatSection.appendChild(enemyBox);
-
-      // Spellbook Pages
-      var spellbook = document.createElement("div");
-      spellbook.style.display = "flex";
-      spellbook.style.gap = "0.5rem";
-      spellbook.style.marginBottom = "1rem";
-      state.combat.spellbook.forEach(function (page, index) {
-        var pageDiv = document.createElement("div");
-        pageDiv.style.width = "60px";
-        pageDiv.style.height = "90px";
-        pageDiv.style.border = "1px solid #333";
-        pageDiv.style.display = "flex";
-        pageDiv.style.alignItems = "center";
-        pageDiv.style.justifyContent = "center";
-        pageDiv.style.backgroundColor = page === "blank page" ? "lightgrey" : "white";
-        pageDiv.textContent = page === "blank page" ? "" : page.name;
-        spellbook.appendChild(pageDiv);
-      });
-      var spellbookLabel = document.createElement("p");
-      spellbookLabel.textContent = "Spellbook:";
-      spellbookLabel.style.fontWeight = "bold";
-      spellbookLabel.style.marginBottom = "0.25rem";
-      combatSection.appendChild(spellbookLabel);
-      combatSection.appendChild(spellbook);
-
-      // Cast + Ink + Bunny Count
-      var castRow = document.createElement("div");
-      castRow.style.display = "flex";
-      castRow.style.alignItems = "center";
-      castRow.style.gap = "1rem";
-      castRow.style.marginBottom = "0.5rem";
-      var allPagesBlank = state.combat.spellbook.length > 0 && state.combat.spellbook.every(function (page) {
-        return page === "blank page";
-      });
-      var castButton = document.createElement("button");
-      if (allPagesBlank) {
-        castButton.textContent = "Skip Turn";
-        castButton.style.backgroundColor = "#f88";
-      } else {
-        castButton.textContent = "Cast Spellbook";
-      }
-      castButton.onclick = function () {
-        return dispatch({
-          type: ACTIONS.CAST_SPELLBOOK
-        });
-      };
-      var bunnyDisplay = document.createElement("span");
-      bunnyDisplay.textContent = "BUNNIES: ".concat(((_state$combat4 = state.combat) === null || _state$combat4 === void 0 ? void 0 : _state$combat4.bunnies) || 0);
-      castRow.appendChild(castButton);
-      castRow.appendChild(castButton);
-
-      // === Mulligan Button ===
-      var mulliganBtn = document.createElement("button");
-      var remaining = (_state$combat$mulliga = (_state$combat5 = state.combat) === null || _state$combat5 === void 0 ? void 0 : _state$combat5.mulligans) !== null && _state$combat$mulliga !== void 0 ? _state$combat$mulliga : 0;
-      mulliganBtn.textContent = "Mulligan (".concat(remaining, ")");
-      if (remaining <= 0) {
-        mulliganBtn.disabled = true;
-        mulliganBtn.style.backgroundColor = "#ccc";
-        mulliganBtn.style.cursor = "not-allowed";
-      } else {
-        mulliganBtn.onclick = function () {
-          dispatch({
-            type: ACTIONS.MULLIGAN
-          });
-        };
-      }
-      castRow.appendChild(mulliganBtn);
-      castRow.appendChild(bunnyDisplay);
-      combatSection.appendChild(castRow);
-
-      // === INK and BOOKS Line (below cast + bunnies)
-      var resourcesRow = document.createElement("div");
-      resourcesRow.style.display = "flex";
-      resourcesRow.style.gap = "1rem";
-      resourcesRow.style.marginBottom = "1rem";
-      var inkDisplay = document.createElement("span");
-      inkDisplay.textContent = "INK: ".concat(state.combat.ink, "/").concat(state.combat.maxInk);
-      var booksDisplay = document.createElement("span");
-      booksDisplay.textContent = "BOOKS: ".concat(state.combat.books);
-      resourcesRow.appendChild(inkDisplay);
-      resourcesRow.appendChild(booksDisplay);
-      combatSection.appendChild(resourcesRow);
-
-      // Hand
-      var handRow = document.createElement("div");
-      handRow.style.display = "flex";
-      handRow.style.gap = "0.5rem";
-      handRow.style.flexWrap = "wrap";
-      if (state.combat.hand && state.combat.hand.length > 0) {
-        state.combat.hand.forEach(function (card, index) {
-          var _card$inkCost;
-          var cardBtn = document.createElement("button");
-          var cardCost = (_card$inkCost = card.inkCost) !== null && _card$inkCost !== void 0 ? _card$inkCost : 0;
-          var canAfford = cardCost <= state.combat.ink;
-          var isUncastable = !!card.uncastable;
-
-          // Display name and cost
-          var costText = !isUncastable && card.inkCost != null ? " (Cost: ".concat(card.inkCost, ")") : "";
-          cardBtn.textContent = "".concat(card.name).concat(costText);
-
-          // Disable the button if the card is uncastable or too expensive
-          cardBtn.disabled = isUncastable || !canAfford;
-
-          // Style disabled buttons
-          if (cardBtn.disabled) {
-            cardBtn.style.opacity = "0.5";
-            cardBtn.style.cursor = "not-allowed";
-          }
-
-          // Only dispatch if allowed
-          cardBtn.onclick = function () {
-            if (!cardBtn.disabled) {
-              dispatch({
-                type: ACTIONS.PLAY_CARD,
-                payload: index
-              });
-            }
-          };
-          handRow.appendChild(cardBtn);
-        });
-      } else {
-        var empty = document.createElement("p");
-        empty.textContent = "Your hand is empty.";
-        handRow.appendChild(empty);
-      }
-
-      // Hand label
-      var handLabel = document.createElement("p");
-      handLabel.textContent = "Hand:";
-      handLabel.style.fontWeight = "bold";
-      handLabel.style.marginBottom = "0.25rem";
-      combatSection.appendChild(handLabel);
-      combatSection.appendChild(handRow);
-    }
-
-    // === Inspect Buttons (always shown in combat)
-    var inspectRow = document.createElement("div");
-    inspectRow.style.marginTop = "1rem";
-    inspectRow.style.display = "flex";
-    inspectRow.style.gap = "0.5rem";
-    [{
-      label: "Combat Deck (".concat(state.combat.deck.length, ")"),
-      screen: SCREENS.COMBAT_DECK
-    }, {
-      label: "Graveyard (".concat(state.combat.graveyard.length, ")"),
-      screen: SCREENS.GRAVEYARD
-    }, {
-      label: "Exile (".concat(state.combat.exile.length, ")"),
-      screen: SCREENS.EXILE
-    }].forEach(function (_ref18) {
-      var label = _ref18.label,
-        screen = _ref18.screen;
-      var btn = document.createElement("button");
-      btn.textContent = state.currentScreen === screen ? "Return" : "Inspect ".concat(label);
-      btn.onclick = function () {
-        if (state.currentScreen === screen) {
-          returnToMain(dispatch);
-        } else {
-          changeScreen(dispatch, screen);
-        }
-      };
-      inspectRow.appendChild(btn);
-    });
-
-    //label
-    var inspectZoneLabel = document.createElement("p");
-    inspectZoneLabel.textContent = "Inspect Zones:";
-    inspectZoneLabel.style.fontWeight = "bold";
-    inspectZoneLabel.style.marginBottom = "0.25rem";
-    combatSection.appendChild(inspectZoneLabel);
-    combatSection.appendChild(inspectRow);
-    output.appendChild(combatSection);
-  }
-  if (state.currentScreen === SCREENS.COMBAT_DECK) {
-    var _state$combat6;
-    renderCardList("Combat Deck", ((_state$combat6 = state.combat) === null || _state$combat6 === void 0 ? void 0 : _state$combat6.deck) || []);
-  }
-  if (state.currentScreen === SCREENS.GRAVEYARD) {
-    var _state$combat7;
-    renderCardList("Graveyard", ((_state$combat7 = state.combat) === null || _state$combat7 === void 0 ? void 0 : _state$combat7.graveyard) || []);
-  }
-  if (state.currentScreen === SCREENS.EXILE) {
-    var _state$combat8;
-    renderCardList("Exile", ((_state$combat8 = state.combat) === null || _state$combat8 === void 0 ? void 0 : _state$combat8.exile) || []);
-  }
-
-  // === Log ===
-  var log = document.createElement("div");
-  log.innerHTML = "<h3>Log</h3><ul>".concat(state.log.slice(0, 5).map(function (msg) {
-    return "<li>".concat(msg, "</li>");
-  }).join(""), "</ul>");
-  output.appendChild(log);
-
-  // === Main Menu ===
-  if (state.currentScreen !== SCREENS.DECK && state.currentPhase === PHASES.MAIN_MENU) {
-    var button = document.createElement("button");
-    button.textContent = "New Game";
-    button.onclick = function () {
-      dispatch({
-        type: ACTIONS.ADVANCE_PHASE,
-        payload: PHASES.DIFFICULTY_SELECTION
-      });
-    };
-    output.appendChild(button);
-  }
-
-  // === Difficulty Selection ===
-  if (state.currentScreen !== SCREENS.DECK && state.currentPhase === PHASES.DIFFICULTY_SELECTION) {
-    var difficulties = [DIFFICULTIES.EASY, DIFFICULTIES.MEDIUM, DIFFICULTIES.HARD];
-    difficulties.forEach(function (difficulty) {
-      var btn = document.createElement("button");
-      btn.textContent = "Start ".concat(difficulty, " Game");
-      btn.onclick = function () {
-        return selectDifficultyAndBeginGame(dispatch, difficulty);
-      };
-      output.appendChild(btn);
-    });
-  }
-
-  // === Relic Offerings ===
-  if (state.currentScreen !== SCREENS.DECK && state.offerings.relics && state.offerings.relics.length > 0) {
-    var relicSection = document.createElement("div");
-    relicSection.innerHTML = "<h3>Relic Offerings</h3>";
-    state.offerings.relics.forEach(function (relic, index) {
-      var btn = document.createElement("button");
-      btn.textContent = "".concat(relic.name);
-      btn.onclick = function () {
-        return dispatch({
-          type: ACTIONS.PICK_RELIC,
-          payload: index
-        });
-      };
-      relicSection.appendChild(btn);
-    });
-    output.appendChild(relicSection);
-  }
-  // === Path Selection ===
-  if (state.currentScreen !== SCREENS.DECK && state.offerings.paths && state.offerings.paths.length > 0) {
-    var pathSection = document.createElement("div");
-    pathSection.innerHTML = "<h3>Choose a Path</h3>";
-    state.offerings.paths.forEach(function (path, index) {
-      var btn = document.createElement("button");
-
-      // === Conditionally render based on anonymity ===
-      if (path.anonymousNameDisplay) {
-        btn.textContent = "???";
-      } else {
-        btn.textContent = "".concat(path.path);
-      }
-      btn.onclick = function () {
-        return dispatch({
-          type: ACTIONS.PICK_PATH,
-          payload: index
-        });
-      };
-      pathSection.appendChild(btn);
-    });
-    output.appendChild(pathSection);
-  }
-
-  // === Card Offerings ===
-  if (state.currentScreen !== SCREENS.DECK && state.offerings.cards && state.offerings.cards.length > 0) {
-    var cardSection = document.createElement("div");
-    cardSection.innerHTML = "<h3>Choose a Card</h3>";
-    state.offerings.cards.forEach(function (card, index) {
-      var btn = document.createElement("button");
-      btn.textContent = "".concat(card.name, " (Cost: ").concat(card.inkCost, ")").concat(card.gem ? " [Gem: ".concat(card.gem.name, "]") : "");
-      btn.onclick = function () {
-        return dispatch({
-          type: ACTIONS.PICK_CARD,
-          payload: index
-        });
-      };
-      cardSection.appendChild(btn);
-    });
-    output.appendChild(cardSection);
-  }
-
-  // === Potion Offerings ===
-  if (state.currentScreen !== SCREENS.DECK && state.currentPhase === PHASES.POTION_OFFERING && state.offerings.potions && state.offerings.potions.length > 0) {
-    var potionSection = document.createElement("div");
-    potionSection.innerHTML = "<h3>Choose a Potion</h3>";
-    state.offerings.potions.forEach(function (potion, index) {
-      var btn = document.createElement("button");
-      btn.textContent = "".concat(potion.name, " (").concat(potion.rarity, ")");
-      btn.onclick = function () {
-        return dispatch({
-          type: ACTIONS.PICK_POTION,
-          payload: index
-        });
-      };
-      potionSection.appendChild(btn);
-    });
-    output.appendChild(potionSection);
-  }
-
-  // ==== Gem Offerings ===
-  if (state.currentScreen !== SCREENS.DECK && state.currentScreen === SCREENS.MAIN && state.currentPhase === PHASES.GEM_OFFERING && state.offerings.gems && state.offerings.gems.length > 0) {
-    var gemSection = document.createElement("div");
-    gemSection.innerHTML = "<h3>Choose a Gem</h3>";
-    state.offerings.gems.forEach(function (gem, index) {
-      var btn = document.createElement("button");
-      btn.textContent = "".concat(gem.name, " (").concat(gem.rarity, ")");
-      btn.onclick = function () {
-        return dispatch({
-          type: ACTIONS.OPEN_MOD_SCREEN,
-          payload: {
-            mod: {
-              gem: gem
-            },
-            origin: PHASES.GEM_OFFERING
-          }
-        });
-      };
-      gemSection.appendChild(btn);
-    });
-    output.appendChild(gemSection);
-  }
-  // === Shopfront Display ===
-
-  if (state.currentPhase === PHASES.SHOP && state.currentScreen !== SCREENS.MOD && state.offerings.shopfront.length > 0) {
-    var shopSection = document.createElement("div");
-    shopSection.innerHTML = "<h3>Shop Inventory</h3>";
-    var list = document.createElement("ul");
-    state.offerings.shopfront.forEach(function (entry, index) {
-      var _entry$item$price3, _entry$item4, _state$gold;
-      if (!entry || !entry.item || !entry.item.name) return;
-      var li = document.createElement("li");
-      var btn = document.createElement("button");
-      var price = (_entry$item$price3 = (_entry$item4 = entry.item) === null || _entry$item4 === void 0 ? void 0 : _entry$item4.price) !== null && _entry$item$price3 !== void 0 ? _entry$item$price3 : 0;
-      var playerGold = (_state$gold = state.gold) !== null && _state$gold !== void 0 ? _state$gold : 0;
-      var isGem = entry.type === "gem";
-      var disabled = price > playerGold || isGem && allCardsSocketed;
-      btn.textContent = "".concat(entry.type.toUpperCase(), ": ").concat(entry.item.name, " (").concat(price, "g)");
-      if (disabled) {
-        btn.disabled = true;
-        btn.style.opacity = 0.5;
-        btn.style.cursor = "not-allowed";
-      }
-
-      // Bind correct function based on type
-      btn.onclick = function () {
-        switch (entry.type) {
-          case "card":
-            dispatch({
-              type: ACTIONS.PICK_CARD,
-              payload: index
-            });
-            break;
-          case "potion":
-            dispatch({
-              type: ACTIONS.PICK_POTION,
-              payload: index
-            });
-            break;
-          case "gem":
-            dispatch({
-              type: ACTIONS.OPEN_MOD_SCREEN,
-              payload: {
-                mod: {
-                  gem: entry.item
-                },
-                origin: PHASES.SHOP
-              }
-            });
-            break;
-          case "relic":
-            dispatch({
-              type: ACTIONS.PICK_RELIC,
-              payload: index
-            });
-            break;
-          default:
-            console.warn("Unknown shop item type:", entry.type);
-        }
-      };
-      li.appendChild(btn);
-      list.appendChild(li);
-    });
-
-    // Exit Shop Button (for future logic)
-    var exitBtn = document.createElement("button");
-    exitBtn.textContent = "Exit Shop";
-    exitBtn.onclick = function () {
-      dispatch({
-        type: ACTIONS.EXIT_SHOP
-      });
-    };
-    shopSection.appendChild(list);
-    shopSection.appendChild(exitBtn);
-    output.appendChild(shopSection);
-  }
-
-  // === Mod Screen ===
-  if (state.currentScreen === SCREENS.MOD && (_state$modData3 = state.modData) !== null && _state$modData3 !== void 0 && _state$modData3.mod) {
-    var modSection = document.createElement("div");
-    modSection.innerHTML = "<h3>Choose a card to modify</h3>";
-    var mod = state.modData.mod;
-    var isGemMod = !!mod.gem;
-    state.campaign.deck.forEach(function (card) {
-      // === Filter based on mod type ===
-      if (isGemMod && (card.gem || card.unsocketable)) return;
-      if (mod.upgrade && card.unupgradable) return;
-      var btn = document.createElement("button");
-      btn.textContent = "".concat(card.name, " (Cost: ").concat(card.inkCost, ")");
-      btn.onclick = function () {
-        dispatch({
-          type: ACTIONS.APPLY_CARD_MOD,
-          payload: card
-        });
-      };
-      modSection.appendChild(btn);
-    });
-    output.appendChild(modSection);
-  }
-
-  // ======= render purge, transmute, and enchant phases (AKA mod phases) ======
-
-  renderModPhaseEntry(PHASES.PURGE, "Lethian Font", "purge");
-  renderModPhaseEntry(PHASES.TRANSMUTE, "Metamorphosis", "transmute");
-  renderModPhaseEntry(PHASES.ENCHANT, "Enchanted Dolmen", "upgrade");
-
-  // ====== render hoard phase= ======
-  if (state.currentPhase === PHASES.HOARD) {
-    var btn = document.createElement("button");
-    btn.textContent = "Loot Hoard";
-    btn.style.fontSize = "1.5rem";
-    btn.style.padding = "1rem 2rem";
-    btn.onclick = function () {
-      // Placeholder until lootHoard is implemented
-      dispatch({
-        type: "LOOT_HOARD"
-      }); // or just console.log("Loot Hoard")
-    };
-    output.appendChild(btn);
-  }
-  // ====== rest phase rendering ======
-  if (state.currentPhase === PHASES.REST) {
-    var restBtn = document.createElement("button");
-    restBtn.textContent = "Fireside Rest";
-    restBtn.style.fontSize = "1.5rem";
-    restBtn.style.padding = "1rem 2rem";
-    restBtn.onclick = function () {
-      dispatch({
-        type: "REST"
-      }); // Placeholder
-    };
-    var practiceBtn = document.createElement("button");
-    practiceBtn.textContent = "Practice Wandwork";
-    practiceBtn.style.fontSize = "1.5rem";
-    practiceBtn.style.padding = "1rem 2rem";
-    practiceBtn.onclick = function () {
-      dispatch({
-        type: "PRACTICE_WANDWORK"
-      }); // Placeholder
-    };
-    output.appendChild(restBtn);
-    output.appendChild(practiceBtn);
-  }
-
-  // === Combat End Phase ===
-  if (state.currentPhase === PHASES.COMBAT_END) {
-    var _state$offerings;
-    var combatEndSection = document.createElement("div");
-    combatEndSection.innerHTML = "<h3>Combat Concluded</h3>";
-    var hasUnclaimedLoot = ((_state$offerings = state.offerings) === null || _state$offerings === void 0 ? void 0 : _state$offerings.combatRewards) && state.offerings.combatRewards.length > 0;
-    var _btn = document.createElement("button");
-    _btn.textContent = hasUnclaimedLoot ? "Skip Loot" : "Continue";
-    _btn.onclick = function () {
-      dispatch({
-        type: ACTIONS.CLOSE_COMBAT_REWARDS
-      });
-    };
-    combatEndSection.appendChild(_btn);
-    output.appendChild(combatEndSection);
-  }
-  if (state.currentPhase === PHASES.COMBAT_END && state.offerings.combatRewards && state.offerings.combatRewards.length > 0) {
-    console.log("🔎 Rendering combatRewards:", state.offerings.combatRewards);
-    var rewardSection = document.createElement("div");
-    rewardSection.innerHTML = "<h3>Combat Rewards</h3>";
-    state.offerings.combatRewards.forEach(function (reward, index) {
-      var btn = document.createElement("button");
-      var label = "";
-      switch (reward.type) {
-        case "gold":
-          label = "Gold: ".concat(reward.value);
-          break;
-        case "card":
-          label = "Card: ".concat(reward.value.name);
-          break;
-        case "relic":
-          label = "Relic: ".concat(reward.value.name);
-          break;
-        case "potion":
-          label = "Potion: ".concat(reward.value.name);
-          break;
-        case "gem":
-          label = "Gem: ".concat(reward.value.name);
-          break;
-        default:
-          label = "Unknown Reward";
-      }
-      btn.textContent = label;
-      var isGem = reward.type === "gem";
-      var shouldDisable = isGem && allCardsSocketed;
-      if (shouldDisable) {
-        btn.disabled = true;
-        btn.style.opacity = 0.5;
-        btn.style.cursor = "not-allowed";
-      }
-      if (!shouldDisable) {
-        btn.onclick = function () {
-          if (reward.type === "gold") {
-            dispatch({
-              type: ACTIONS.CLAIM_GOLD_REWARD,
-              payload: {
-                index: index,
-                amount: reward.value
-              }
-            });
-          } else if (reward.type === "card") {
-            dispatch({
-              type: ACTIONS.PICK_CARD,
-              payload: index
-            });
-          } else if (reward.type === "relic") {
-            dispatch({
-              type: ACTIONS.PICK_RELIC,
-              payload: index
-            });
-          } else if (reward.type === "potion") {
-            dispatch({
-              type: ACTIONS.PICK_POTION,
-              payload: index
-            });
-          } else if (reward.type === "gem") {
-            dispatch({
-              type: ACTIONS.OPEN_MOD_SCREEN,
-              payload: {
-                mod: {
-                  gem: reward.value
-                },
-                origin: PHASES.COMBAT_END
-              }
-            });
-          }
-        };
-      }
-      rewardSection.appendChild(btn);
-    });
-    output.appendChild(rewardSection);
-  }
-  // === GAME OVER screen ====
-  if (state.currentPhase === PHASES.GAME_OVER) {
-    var gameOverSection = document.createElement("div");
-    gameOverSection.classList.add("game-over");
-    var banner = document.createElement("h1");
-    banner.textContent = state.gameOverResult === "victory" ? "🏆 Victory!" : "💀 Defeat!";
-    gameOverSection.appendChild(banner);
-    var summary = document.createElement("div");
-    summary.innerHTML = "\n      <p>Game ended at level: ".concat(state.level, "</p>\n      <h3>Decklist:</h3>\n      <ul>\n        ").concat(state.campaign.deck.map(function (card) {
-      return "<li>".concat(card.name, "</li>\n");
-    }).join(""), "\n      </ul>\n      <h3>Relics:</h3>\n      <ul>\n        ").concat(state.relicBelt.map(function (relic) {
-      return "<li>".concat(relic.name, "</li>");
-    }).join(""), "\n      </ul>\n    ");
-    gameOverSection.appendChild(summary);
-    var newGameBtn = document.createElement("button");
-    newGameBtn.textContent = "Return to Main Menu";
-    newGameBtn.onclick = function () {
-      dispatch({
-        type: ACTIONS.NEW_GAME
-      });
-    };
-    gameOverSection.appendChild(newGameBtn);
-    output.appendChild(gameOverSection);
-  }
-
-  // === Deck Inspect / Return Button ===
-  //deck inspect button
-  if ((state.currentScreen === SCREENS.MAIN || state.currentScreen === SCREENS.DECK) && state.campaign.deck.length > 0) {
-    var deckBtn = document.createElement("button");
-    deckBtn.textContent = state.currentScreen === SCREENS.MAIN ? "Inspect Deck (".concat(state.campaign.deck.length, ")") : "Return";
-    deckBtn.onclick = function () {
-      var nextScreen = state.currentScreen === SCREENS.MAIN ? SCREENS.DECK : SCREENS.MAIN;
-      dispatch({
-        type: ACTIONS.SCREEN_CHANGE,
-        payload: nextScreen
-      });
-    };
-    output.appendChild(deckBtn);
-  }
-  // deck inspect screen
-  if (state.currentScreen === SCREENS.DECK) {
-    var deckView = document.createElement("div");
-    deckView.innerHTML = "<h3>Campaign Deck</h3>";
-    var ul = document.createElement("ul");
-    state.campaign.deck.forEach(function (card) {
-      var li = document.createElement("li");
-      li.textContent = card.name;
-      ul.appendChild(li);
-    });
-    deckView.appendChild(ul);
-    output.appendChild(deckView);
-  }
-
-  // === Always-Visible Potion Belt ===
-  if (state.potionBelt && state.potionBelt.length > 0) {
-    var beltSection = document.createElement("div");
-    beltSection.innerHTML = "<h3>Your Potions</h3>";
-    var isCombatPhase = state.currentPhase === PHASES.COMBAT;
-    var isGameOver = state.currentPhase === PHASES.GAME_OVER;
-    state.potionBelt.forEach(function (potion, index) {
-      var btn = document.createElement("button");
-      btn.textContent = potion.name;
-      var isDrinkableNow = !isGameOver && (potion.drinkableOutOfCombat !== false || isCombatPhase);
-      if (!isDrinkableNow) {
-        btn.disabled = true;
-        btn.style.opacity = 0.5;
-        btn.style.cursor = "not-allowed";
-      }
-      btn.onclick = function () {
-        if (isDrinkableNow) {
-          dispatch({
-            type: ACTIONS.DRINK_POTION,
-            payload: index
-          });
-        }
-      };
-      beltSection.appendChild(btn);
-    });
-    output.appendChild(beltSection);
-  }
-  setupHotkeys(state, dispatch);
-}
 // #endregion
 
 // Initialize the game app
@@ -4497,12 +3780,12 @@ function setupHotkeys(state, dispatch) {
     // === Combat Phase
     var isCombat = state.currentPhase === PHASES.COMBAT && state.combat && ![SCREENS.COMBAT_DECK, SCREENS.GRAVEYARD, SCREENS.EXILE].includes(state.currentScreen);
     if (isCombat) {
-      var _state$combat$mulliga2, _state$combat9;
+      var _state$combat$mulliga, _state$combat4;
       if (/^[1-9]$/.test(key) || key === "0") {
-        var _state$combat$hand, _card$inkCost2;
+        var _state$combat$hand, _card$inkCost;
         var _index = key === "0" ? 9 : parseInt(key, 10) - 1;
         var card = (_state$combat$hand = state.combat.hand) === null || _state$combat$hand === void 0 ? void 0 : _state$combat$hand[_index];
-        if (card && !card.uncastable && ((_card$inkCost2 = card.inkCost) !== null && _card$inkCost2 !== void 0 ? _card$inkCost2 : 0) <= state.combat.ink) {
+        if (card && !card.uncastable && ((_card$inkCost = card.inkCost) !== null && _card$inkCost !== void 0 ? _card$inkCost : 0) <= state.combat.ink) {
           dispatch({
             type: ACTIONS.PLAY_CARD,
             payload: _index
@@ -4515,7 +3798,7 @@ function setupHotkeys(state, dispatch) {
           type: ACTIONS.CAST_SPELLBOOK
         });
       }
-      if (key.toLowerCase() === "m" && ((_state$combat$mulliga2 = (_state$combat9 = state.combat) === null || _state$combat9 === void 0 ? void 0 : _state$combat9.mulligans) !== null && _state$combat$mulliga2 !== void 0 ? _state$combat$mulliga2 : 0) > 0) {
+      if (key.toLowerCase() === "m" && ((_state$combat$mulliga = (_state$combat4 = state.combat) === null || _state$combat4 === void 0 ? void 0 : _state$combat4.mulligans) !== null && _state$combat$mulliga !== void 0 ? _state$combat$mulliga : 0) > 0) {
         dispatch({
           type: ACTIONS.MULLIGAN
         });
@@ -4629,9 +3912,9 @@ function toggleCombatInspect(dispatch, state, screen) {
     });
   }
 }
-
-//#region WIP
-// //------------------------------------------------WIP functions for MVP ------------------------------------------------
+//#endregion
+// //------------------------------------------------ DISORGANIZED ------------------------------------------------
+//#region combat functions
 function startTurn(state) {
   var _state$combat$baseBun;
   console.log(">>> Starting new turn. Books remaining: ", state.combat.books);
@@ -4664,9 +3947,9 @@ function startTurn(state) {
   return updatedState;
 }
 function shuffleGraveyardIntoDeck(state) {
-  var _state$combat$graveya, _state$combat0, _state$combat$deck, _state$combat1;
-  var graveyard = (_state$combat$graveya = (_state$combat0 = state.combat) === null || _state$combat0 === void 0 ? void 0 : _state$combat0.graveyard) !== null && _state$combat$graveya !== void 0 ? _state$combat$graveya : [];
-  var deck = (_state$combat$deck = (_state$combat1 = state.combat) === null || _state$combat1 === void 0 ? void 0 : _state$combat1.deck) !== null && _state$combat$deck !== void 0 ? _state$combat$deck : [];
+  var _state$combat$graveya, _state$combat5, _state$combat$deck, _state$combat6;
+  var graveyard = (_state$combat$graveya = (_state$combat5 = state.combat) === null || _state$combat5 === void 0 ? void 0 : _state$combat5.graveyard) !== null && _state$combat$graveya !== void 0 ? _state$combat$graveya : [];
+  var deck = (_state$combat$deck = (_state$combat6 = state.combat) === null || _state$combat6 === void 0 ? void 0 : _state$combat6.deck) !== null && _state$combat$deck !== void 0 ? _state$combat$deck : [];
   if (graveyard.length === 0) {
     return _objectSpread(_objectSpread({}, state), {}, {
       log: ["Your graveyard is already empty."].concat(_toConsumableArray(state.log))
@@ -4692,8 +3975,8 @@ function shuffleGraveyardIntoDeck(state) {
   return updatedState;
 }
 function refillInkpot(state) {
-  var _state$combat$maxInk2, _state$combat10;
-  var maxInk = (_state$combat$maxInk2 = (_state$combat10 = state.combat) === null || _state$combat10 === void 0 ? void 0 : _state$combat10.maxInk) !== null && _state$combat$maxInk2 !== void 0 ? _state$combat$maxInk2 : 0;
+  var _state$combat$maxInk2, _state$combat7;
+  var maxInk = (_state$combat$maxInk2 = (_state$combat7 = state.combat) === null || _state$combat7 === void 0 ? void 0 : _state$combat7.maxInk) !== null && _state$combat$maxInk2 !== void 0 ? _state$combat$maxInk2 : 0;
   return _objectSpread(_objectSpread({}, state), {}, {
     combat: _objectSpread(_objectSpread({}, state.combat), {}, {
       ink: maxInk
@@ -4702,9 +3985,9 @@ function refillInkpot(state) {
   });
 }
 function checkCombatEndViaDeath(state) {
-  var _state$combat11;
+  var _state$combat8;
   var playerDead = state.health <= 0;
-  var enemyDead = ((_state$combat11 = state.combat) === null || _state$combat11 === void 0 ? void 0 : _state$combat11.enemyHp) <= 0;
+  var enemyDead = ((_state$combat8 = state.combat) === null || _state$combat8 === void 0 ? void 0 : _state$combat8.enemyHp) <= 0;
   if (playerDead) {
     console.log(">>> Player is dead. Ending combat.");
     return combatEnd(state, {
@@ -4853,13 +4136,13 @@ function dealDamage(state, damage) {
   return updatedState;
 }
 function playCard(state, index) {
-  var _card$inkCost3;
+  var _card$inkCost2;
   var hand = _toConsumableArray(state.combat.hand);
   var card = hand[index];
 
   /* ── Guard clauses ─────────────────────────────────────────────────── */
   if (!card || card.uncastable) return state;
-  if (((_card$inkCost3 = card.inkCost) !== null && _card$inkCost3 !== void 0 ? _card$inkCost3 : 0) > state.combat.ink) return state;
+  if (((_card$inkCost2 = card.inkCost) !== null && _card$inkCost2 !== void 0 ? _card$inkCost2 : 0) > state.combat.ink) return state;
 
   /* ── Step 1: deduct ink ────────────────────────────────────────────── */
   var updatedState = modifyCombatInk(_objectSpread({}, state), -card.inkCost);
@@ -5274,8 +4557,8 @@ function combatEnd(state) {
   return handlePhaseTransitions(finalState);
 }
 function closeCombatRewards(state) {
-  var _state$offerings2;
-  var hasUnclaimedLoot = ((_state$offerings2 = state.offerings) === null || _state$offerings2 === void 0 ? void 0 : _state$offerings2.combatRewards) && state.offerings.combatRewards.length > 0;
+  var _state$offerings;
+  var hasUnclaimedLoot = ((_state$offerings = state.offerings) === null || _state$offerings === void 0 ? void 0 : _state$offerings.combatRewards) && state.offerings.combatRewards.length > 0;
 
   // Optional: Log message about skipping loot
   var logEntry = hasUnclaimedLoot ? "Skipped remaining combat loot." : "Combat complete.";
@@ -5354,13 +4637,6 @@ function upgradeSpecificCardInCampaignDeck(state, card) {
     })
   });
 }
-function getShopPriceMultiplier(state) {
-  return state.relicBelt.reduce(function (multiplier, relic) {
-    var _relic$triggers3;
-    var effect = (_relic$triggers3 = relic.triggers) === null || _relic$triggers3 === void 0 ? void 0 : _relic$triggers3[TRIGGER_EVENTS.ASSIGN_SHOP_PRICES];
-    return effect !== null && effect !== void 0 && effect.shopPriceMultiplier ? multiplier * effect.shopPriceMultiplier : multiplier;
-  }, 1);
-}
 function mulligan(state) {
   var updatedState = _objectSpread({}, state);
   var combat = updatedState.combat;
@@ -5387,8 +4663,8 @@ function mulligan(state) {
   return updatedState;
 }
 function weakenEnemyByPercent(state, percent) {
-  var _state$combat12;
-  if (!(state !== null && state !== void 0 && (_state$combat12 = state.combat) !== null && _state$combat12 !== void 0 && _state$combat12.enemy) || typeof state.combat.enemy.hp !== "number" || percent <= 0) {
+  var _state$combat9;
+  if (!(state !== null && state !== void 0 && (_state$combat9 = state.combat) !== null && _state$combat9 !== void 0 && _state$combat9.enemy) || typeof state.combat.enemy.hp !== "number" || percent <= 0) {
     console.warn("Invalid state or percent passed to weakenEnemyByPercent.");
     return state;
   }
@@ -5402,6 +4678,740 @@ function weakenEnemyByPercent(state, percent) {
     isBonus: true
   });
 }
+
+//#region render
+
+function render(state, dispatch) {
+  var _state$campaign$deck4, _state$level7, _state$modData3;
+  // Get or create output div
+  var output = document.getElementById("output");
+  if (!output) {
+    output = document.createElement("div");
+    output.id = "output";
+    document.body.appendChild(output);
+  }
+  output.innerHTML = ""; // Clear previous contents
+
+  // //check and see if all cards in the deck are socketed
+  var allCardsSocketed = ((_state$campaign$deck4 = state.campaign.deck) === null || _state$campaign$deck4 === void 0 ? void 0 : _state$campaign$deck4.length) > 0 && state.campaign.deck.every(function (card) {
+    return card.gem != null || card.unsocketable;
+  });
+
+  //
+  function renderCardList(title, cards) {
+    var section = document.createElement("div");
+    section.innerHTML = "<h3>".concat(title, "</h3>");
+    var ul = document.createElement("ul");
+    cards.forEach(function (card) {
+      var li = document.createElement("li");
+      li.textContent = card.name;
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    output.appendChild(section);
+  }
+
+  // render utility function
+  function renderModPhaseEntry(phase, label, modKey) {
+    if (state.currentPhase === phase && state.currentScreen !== SCREENS.MOD) {
+      var modBtn = document.createElement("button");
+      modBtn.textContent = label;
+      modBtn.style.fontSize = "1.5rem";
+      modBtn.style.padding = "1rem 2rem";
+      modBtn.onclick = function () {
+        modBtn.disabled = true; // prevent double click
+        dispatch({
+          type: ACTIONS.OPEN_MOD_SCREEN,
+          payload: {
+            mod: _defineProperty({}, modKey, true),
+            origin: phase
+          }
+        });
+      };
+      output.appendChild(modBtn);
+    }
+  }
+
+  // === Game Info ===
+  var info = document.createElement("div");
+  info.innerHTML = "\n  <h2>Game Info</h2>\n  <p><strong>Current Screen:</strong> ".concat(state.currentScreen, "</p>\n  <p><strong>Phase:</strong> ").concat(state.currentPhase, " &nbsp;&nbsp; <strong>Level:</strong> ").concat((_state$level7 = state.level) !== null && _state$level7 !== void 0 ? _state$level7 : 0, "</p>\n  <p><strong>Gold:</strong> ").concat(state.gold, "</p>\n  <p><strong>Health:</strong> ").concat(state.health, "/").concat(state.maxHealth, "</p>\n  <p><strong>Deck Size:</strong> ").concat(state.campaign.deck.length, "</p>\n  <p><strong>Relics:</strong> ").concat(state.relicBelt.length > 0 ? Object.entries(state.relicBelt.reduce(function (acc, relic) {
+    acc[relic.name] = (acc[relic.name] || 0) + 1;
+    return acc;
+  }, {})).map(function (_ref16) {
+    var _ref17 = _slicedToArray(_ref16, 2),
+      name = _ref17[0],
+      count = _ref17[1];
+    return count > 1 ? "".concat(name, " x").concat(count) : name;
+  }).join(", ") : "None", "</p>\n");
+  output.appendChild(info);
+
+  // === Combat Display ===
+  var isCombatInspectScreen = [SCREENS.COMBAT_DECK, SCREENS.GRAVEYARD, SCREENS.EXILE].includes(state.currentScreen);
+  if (state.currentPhase === PHASES.COMBAT && state.combat) {
+    var combatSection = document.createElement("div");
+    combatSection.style.border = "2px solid black";
+    combatSection.style.padding = "1rem";
+    combatSection.style.margin = "1rem 0";
+    combatSection.innerHTML = "<h3>Combat</h3>";
+
+    // === Main Combat UI (skip if inspecting)
+    if (!isCombatInspectScreen) {
+      var _state$combat0, _state$combat$mulliga2, _state$combat1;
+      // Enemy Name + HP (on same line)
+      var enemyBox = document.createElement("div");
+      enemyBox.style.display = "flex";
+      enemyBox.style.justifyContent = "space-between";
+      enemyBox.style.alignItems = "center";
+      enemyBox.style.fontSize = "1.5rem";
+      enemyBox.style.fontWeight = "bold";
+      enemyBox.style.border = "1px solid red";
+      enemyBox.style.padding = "1rem";
+      enemyBox.style.marginBottom = "1rem";
+
+      // Enemy name
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = state.combat.enemy.name;
+
+      // Enemy HP
+      var hpSpan = document.createElement("span");
+      hpSpan.textContent = "HP: ".concat(state.combat.enemyHp);
+      enemyBox.appendChild(nameSpan);
+      enemyBox.appendChild(hpSpan);
+      combatSection.appendChild(enemyBox);
+
+      // Spellbook Pages
+      var spellbook = document.createElement("div");
+      spellbook.style.display = "flex";
+      spellbook.style.gap = "0.5rem";
+      spellbook.style.marginBottom = "1rem";
+      state.combat.spellbook.forEach(function (page, index) {
+        var pageDiv = document.createElement("div");
+        pageDiv.style.width = "60px";
+        pageDiv.style.height = "90px";
+        pageDiv.style.border = "1px solid #333";
+        pageDiv.style.display = "flex";
+        pageDiv.style.alignItems = "center";
+        pageDiv.style.justifyContent = "center";
+        pageDiv.style.backgroundColor = page === "blank page" ? "lightgrey" : "white";
+        pageDiv.textContent = page === "blank page" ? "" : page.name;
+        spellbook.appendChild(pageDiv);
+      });
+      var spellbookLabel = document.createElement("p");
+      spellbookLabel.textContent = "Spellbook:";
+      spellbookLabel.style.fontWeight = "bold";
+      spellbookLabel.style.marginBottom = "0.25rem";
+      combatSection.appendChild(spellbookLabel);
+      combatSection.appendChild(spellbook);
+
+      // Cast + Ink + Bunny Count
+      var castRow = document.createElement("div");
+      castRow.style.display = "flex";
+      castRow.style.alignItems = "center";
+      castRow.style.gap = "1rem";
+      castRow.style.marginBottom = "0.5rem";
+      var allPagesBlank = state.combat.spellbook.length > 0 && state.combat.spellbook.every(function (page) {
+        return page === "blank page";
+      });
+      var castButton = document.createElement("button");
+      if (allPagesBlank) {
+        castButton.textContent = "Skip Turn";
+        castButton.style.backgroundColor = "#f88";
+      } else {
+        castButton.textContent = "Cast Spellbook";
+      }
+      castButton.onclick = function () {
+        return dispatch({
+          type: ACTIONS.CAST_SPELLBOOK
+        });
+      };
+      var bunnyDisplay = document.createElement("span");
+      bunnyDisplay.textContent = "BUNNIES: ".concat(((_state$combat0 = state.combat) === null || _state$combat0 === void 0 ? void 0 : _state$combat0.bunnies) || 0);
+      castRow.appendChild(castButton);
+      castRow.appendChild(castButton);
+
+      // === Mulligan Button ===
+      var mulliganBtn = document.createElement("button");
+      var remaining = (_state$combat$mulliga2 = (_state$combat1 = state.combat) === null || _state$combat1 === void 0 ? void 0 : _state$combat1.mulligans) !== null && _state$combat$mulliga2 !== void 0 ? _state$combat$mulliga2 : 0;
+      mulliganBtn.textContent = "Mulligan (".concat(remaining, ")");
+      if (remaining <= 0) {
+        mulliganBtn.disabled = true;
+        mulliganBtn.style.backgroundColor = "#ccc";
+        mulliganBtn.style.cursor = "not-allowed";
+      } else {
+        mulliganBtn.onclick = function () {
+          dispatch({
+            type: ACTIONS.MULLIGAN
+          });
+        };
+      }
+      castRow.appendChild(mulliganBtn);
+      castRow.appendChild(bunnyDisplay);
+      combatSection.appendChild(castRow);
+
+      // === INK and BOOKS Line (below cast + bunnies)
+      var resourcesRow = document.createElement("div");
+      resourcesRow.style.display = "flex";
+      resourcesRow.style.gap = "1rem";
+      resourcesRow.style.marginBottom = "1rem";
+      var inkDisplay = document.createElement("span");
+      inkDisplay.textContent = "INK: ".concat(state.combat.ink, "/").concat(state.combat.maxInk);
+      var booksDisplay = document.createElement("span");
+      booksDisplay.textContent = "BOOKS: ".concat(state.combat.books);
+      resourcesRow.appendChild(inkDisplay);
+      resourcesRow.appendChild(booksDisplay);
+      combatSection.appendChild(resourcesRow);
+
+      // Hand
+      var handRow = document.createElement("div");
+      handRow.style.display = "flex";
+      handRow.style.gap = "0.5rem";
+      handRow.style.flexWrap = "wrap";
+      if (state.combat.hand && state.combat.hand.length > 0) {
+        state.combat.hand.forEach(function (card, index) {
+          var _card$inkCost3;
+          var cardBtn = document.createElement("button");
+          var cardCost = (_card$inkCost3 = card.inkCost) !== null && _card$inkCost3 !== void 0 ? _card$inkCost3 : 0;
+          var canAfford = cardCost <= state.combat.ink;
+          var isUncastable = !!card.uncastable;
+
+          // Display name and cost
+          var costText = !isUncastable && card.inkCost != null ? " (Cost: ".concat(card.inkCost, ")") : "";
+          cardBtn.textContent = "".concat(card.name).concat(costText);
+
+          // Disable the button if the card is uncastable or too expensive
+          cardBtn.disabled = isUncastable || !canAfford;
+
+          // Style disabled buttons
+          if (cardBtn.disabled) {
+            cardBtn.style.opacity = "0.5";
+            cardBtn.style.cursor = "not-allowed";
+          }
+
+          // Only dispatch if allowed
+          cardBtn.onclick = function () {
+            if (!cardBtn.disabled) {
+              dispatch({
+                type: ACTIONS.PLAY_CARD,
+                payload: index
+              });
+            }
+          };
+          handRow.appendChild(cardBtn);
+        });
+      } else {
+        var empty = document.createElement("p");
+        empty.textContent = "Your hand is empty.";
+        handRow.appendChild(empty);
+      }
+
+      // Hand label
+      var handLabel = document.createElement("p");
+      handLabel.textContent = "Hand:";
+      handLabel.style.fontWeight = "bold";
+      handLabel.style.marginBottom = "0.25rem";
+      combatSection.appendChild(handLabel);
+      combatSection.appendChild(handRow);
+    }
+
+    // === Inspect Buttons (always shown in combat)
+    var inspectRow = document.createElement("div");
+    inspectRow.style.marginTop = "1rem";
+    inspectRow.style.display = "flex";
+    inspectRow.style.gap = "0.5rem";
+    [{
+      label: "Combat Deck (".concat(state.combat.deck.length, ")"),
+      screen: SCREENS.COMBAT_DECK
+    }, {
+      label: "Graveyard (".concat(state.combat.graveyard.length, ")"),
+      screen: SCREENS.GRAVEYARD
+    }, {
+      label: "Exile (".concat(state.combat.exile.length, ")"),
+      screen: SCREENS.EXILE
+    }].forEach(function (_ref18) {
+      var label = _ref18.label,
+        screen = _ref18.screen;
+      var btn = document.createElement("button");
+      btn.textContent = state.currentScreen === screen ? "Return" : "Inspect ".concat(label);
+      btn.onclick = function () {
+        if (state.currentScreen === screen) {
+          returnToMain(dispatch);
+        } else {
+          changeScreen(dispatch, screen);
+        }
+      };
+      inspectRow.appendChild(btn);
+    });
+
+    //label
+    var inspectZoneLabel = document.createElement("p");
+    inspectZoneLabel.textContent = "Inspect Zones:";
+    inspectZoneLabel.style.fontWeight = "bold";
+    inspectZoneLabel.style.marginBottom = "0.25rem";
+    combatSection.appendChild(inspectZoneLabel);
+    combatSection.appendChild(inspectRow);
+    output.appendChild(combatSection);
+  }
+  if (state.currentScreen === SCREENS.COMBAT_DECK) {
+    var _state$combat10;
+    renderCardList("Combat Deck", ((_state$combat10 = state.combat) === null || _state$combat10 === void 0 ? void 0 : _state$combat10.deck) || []);
+  }
+  if (state.currentScreen === SCREENS.GRAVEYARD) {
+    var _state$combat11;
+    renderCardList("Graveyard", ((_state$combat11 = state.combat) === null || _state$combat11 === void 0 ? void 0 : _state$combat11.graveyard) || []);
+  }
+  if (state.currentScreen === SCREENS.EXILE) {
+    var _state$combat12;
+    renderCardList("Exile", ((_state$combat12 = state.combat) === null || _state$combat12 === void 0 ? void 0 : _state$combat12.exile) || []);
+  }
+
+  // === Log ===
+  var log = document.createElement("div");
+  log.innerHTML = "<h3>Log</h3><ul>".concat(state.log.slice(0, 5).map(function (msg) {
+    return "<li>".concat(msg, "</li>");
+  }).join(""), "</ul>");
+  output.appendChild(log);
+
+  // === Main Menu ===
+  if (state.currentScreen !== SCREENS.DECK && state.currentPhase === PHASES.MAIN_MENU) {
+    var button = document.createElement("button");
+    button.textContent = "New Game";
+    button.onclick = function () {
+      dispatch({
+        type: ACTIONS.ADVANCE_PHASE,
+        payload: PHASES.DIFFICULTY_SELECTION
+      });
+    };
+    output.appendChild(button);
+  }
+
+  // === Difficulty Selection ===
+  if (state.currentScreen !== SCREENS.DECK && state.currentPhase === PHASES.DIFFICULTY_SELECTION) {
+    var difficulties = [DIFFICULTIES.EASY, DIFFICULTIES.MEDIUM, DIFFICULTIES.HARD];
+    difficulties.forEach(function (difficulty) {
+      var btn = document.createElement("button");
+      btn.textContent = "Start ".concat(difficulty, " Game");
+      btn.onclick = function () {
+        return selectDifficultyAndBeginGame(dispatch, difficulty);
+      };
+      output.appendChild(btn);
+    });
+  }
+
+  // === Relic Offerings ===
+  if (state.currentScreen !== SCREENS.DECK && state.offerings.relics && state.offerings.relics.length > 0) {
+    var relicSection = document.createElement("div");
+    relicSection.innerHTML = "<h3>Relic Offerings</h3>";
+    state.offerings.relics.forEach(function (relic, index) {
+      var btn = document.createElement("button");
+      btn.textContent = "".concat(relic.name);
+      btn.onclick = function () {
+        return dispatch({
+          type: ACTIONS.PICK_RELIC,
+          payload: index
+        });
+      };
+      relicSection.appendChild(btn);
+    });
+    output.appendChild(relicSection);
+  }
+  // === Path Selection ===
+  if (state.currentScreen !== SCREENS.DECK && state.offerings.paths && state.offerings.paths.length > 0) {
+    var pathSection = document.createElement("div");
+    pathSection.innerHTML = "<h3>Choose a Path</h3>";
+    state.offerings.paths.forEach(function (path, index) {
+      var btn = document.createElement("button");
+
+      // === Conditionally render based on anonymity ===
+      if (path.anonymousNameDisplay) {
+        btn.textContent = "???";
+      } else {
+        btn.textContent = "".concat(path.path);
+      }
+      btn.onclick = function () {
+        return dispatch({
+          type: ACTIONS.PICK_PATH,
+          payload: index
+        });
+      };
+      pathSection.appendChild(btn);
+    });
+    output.appendChild(pathSection);
+  }
+
+  // === Card Offerings ===
+  if (state.currentScreen !== SCREENS.DECK && state.offerings.cards && state.offerings.cards.length > 0) {
+    var cardSection = document.createElement("div");
+    cardSection.innerHTML = "<h3>Choose a Card</h3>";
+    state.offerings.cards.forEach(function (card, index) {
+      var btn = document.createElement("button");
+      btn.textContent = "".concat(card.name, " (Cost: ").concat(card.inkCost, ")").concat(card.gem ? " [Gem: ".concat(card.gem.name, "]") : "");
+      btn.onclick = function () {
+        return dispatch({
+          type: ACTIONS.PICK_CARD,
+          payload: index
+        });
+      };
+      cardSection.appendChild(btn);
+    });
+    output.appendChild(cardSection);
+  }
+
+  // === Potion Offerings ===
+  if (state.currentScreen !== SCREENS.DECK && state.currentPhase === PHASES.POTION_OFFERING && state.offerings.potions && state.offerings.potions.length > 0) {
+    var potionSection = document.createElement("div");
+    potionSection.innerHTML = "<h3>Choose a Potion</h3>";
+    state.offerings.potions.forEach(function (potion, index) {
+      var btn = document.createElement("button");
+      btn.textContent = "".concat(potion.name, " (").concat(potion.rarity, ")");
+      btn.onclick = function () {
+        return dispatch({
+          type: ACTIONS.PICK_POTION,
+          payload: index
+        });
+      };
+      potionSection.appendChild(btn);
+    });
+    output.appendChild(potionSection);
+  }
+
+  // ==== Gem Offerings ===
+  if (state.currentScreen !== SCREENS.DECK && state.currentScreen === SCREENS.MAIN && state.currentPhase === PHASES.GEM_OFFERING && state.offerings.gems && state.offerings.gems.length > 0) {
+    var gemSection = document.createElement("div");
+    gemSection.innerHTML = "<h3>Choose a Gem</h3>";
+    state.offerings.gems.forEach(function (gem, index) {
+      var btn = document.createElement("button");
+      btn.textContent = "".concat(gem.name, " (").concat(gem.rarity, ")");
+      btn.onclick = function () {
+        return dispatch({
+          type: ACTIONS.OPEN_MOD_SCREEN,
+          payload: {
+            mod: {
+              gem: gem
+            },
+            origin: PHASES.GEM_OFFERING
+          }
+        });
+      };
+      gemSection.appendChild(btn);
+    });
+    output.appendChild(gemSection);
+  }
+  // === Shopfront Display ===
+  if (state.currentPhase === PHASES.SHOP && state.currentScreen !== SCREENS.MOD && state.offerings.shopfront.length > 0) {
+    var shopSection = document.createElement("div");
+    shopSection.innerHTML = "<h3>Shop Inventory</h3>";
+    var list = document.createElement("ul");
+    state.offerings.shopfront.forEach(function (entry, index) {
+      var _entry$item$price3, _entry$item4, _state$gold;
+      if (!entry || !entry.item || !entry.item.name) return;
+      var li = document.createElement("li");
+      var btn = document.createElement("button");
+      var price = (_entry$item$price3 = (_entry$item4 = entry.item) === null || _entry$item4 === void 0 ? void 0 : _entry$item4.price) !== null && _entry$item$price3 !== void 0 ? _entry$item$price3 : 0;
+      var playerGold = (_state$gold = state.gold) !== null && _state$gold !== void 0 ? _state$gold : 0;
+      var isGem = entry.type === "gem";
+      var disabled = price > playerGold || isGem && allCardsSocketed;
+      btn.textContent = "".concat(entry.type.toUpperCase(), ": ").concat(entry.item.name, " (").concat(price, "g)");
+      if (disabled) {
+        btn.disabled = true;
+        btn.style.opacity = 0.5;
+        btn.style.cursor = "not-allowed";
+      }
+
+      // Bind correct function based on type
+      btn.onclick = function () {
+        switch (entry.type) {
+          case "card":
+            dispatch({
+              type: ACTIONS.PICK_CARD,
+              payload: index
+            });
+            break;
+          case "potion":
+            dispatch({
+              type: ACTIONS.PICK_POTION,
+              payload: index
+            });
+            break;
+          case "gem":
+            dispatch({
+              type: ACTIONS.OPEN_MOD_SCREEN,
+              payload: {
+                mod: {
+                  gem: entry.item
+                },
+                origin: PHASES.SHOP
+              }
+            });
+            break;
+          case "relic":
+            dispatch({
+              type: ACTIONS.PICK_RELIC,
+              payload: index
+            });
+            break;
+          default:
+            console.warn("Unknown shop item type:", entry.type);
+        }
+      };
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+
+    // Exit Shop Button (for future logic)
+    var exitBtn = document.createElement("button");
+    exitBtn.textContent = "Exit Shop";
+    exitBtn.onclick = function () {
+      dispatch({
+        type: ACTIONS.EXIT_SHOP
+      });
+    };
+    shopSection.appendChild(list);
+    shopSection.appendChild(exitBtn);
+    output.appendChild(shopSection);
+  }
+
+  // === Mod Screen ===
+  if (state.currentScreen === SCREENS.MOD && (_state$modData3 = state.modData) !== null && _state$modData3 !== void 0 && _state$modData3.mod) {
+    var modSection = document.createElement("div");
+    modSection.innerHTML = "<h3>Choose a card to modify</h3>";
+    var mod = state.modData.mod;
+    var isGemMod = !!mod.gem;
+    state.campaign.deck.forEach(function (card) {
+      // === Filter based on mod type ===
+      if (isGemMod && (card.gem || card.unsocketable)) return;
+      if (mod.upgrade && card.unupgradable) return;
+      var btn = document.createElement("button");
+      btn.textContent = "".concat(card.name, " (Cost: ").concat(card.inkCost, ")");
+      btn.onclick = function () {
+        dispatch({
+          type: ACTIONS.APPLY_CARD_MOD,
+          payload: card
+        });
+      };
+      modSection.appendChild(btn);
+    });
+    output.appendChild(modSection);
+  }
+
+  // ======= render purge, transmute, and enchant phases (AKA mod phases) ======
+  renderModPhaseEntry(PHASES.PURGE, "Lethian Font", "purge");
+  renderModPhaseEntry(PHASES.TRANSMUTE, "Metamorphosis", "transmute");
+  renderModPhaseEntry(PHASES.ENCHANT, "Enchanted Dolmen", "upgrade");
+
+  // ====== render hoard phase= ======
+  if (state.currentPhase === PHASES.HOARD) {
+    var btn = document.createElement("button");
+    btn.textContent = "Loot Hoard";
+    btn.style.fontSize = "1.5rem";
+    btn.style.padding = "1rem 2rem";
+    btn.onclick = function () {
+      // Placeholder until lootHoard is implemented
+      dispatch({
+        type: "LOOT_HOARD"
+      }); // or just console.log("Loot Hoard")
+    };
+    output.appendChild(btn);
+  }
+  // ====== rest phase rendering ======
+  if (state.currentPhase === PHASES.REST) {
+    var restBtn = document.createElement("button");
+    restBtn.textContent = "Fireside Rest";
+    restBtn.style.fontSize = "1.5rem";
+    restBtn.style.padding = "1rem 2rem";
+    restBtn.onclick = function () {
+      dispatch({
+        type: "REST"
+      }); // Placeholder
+    };
+    var practiceBtn = document.createElement("button");
+    practiceBtn.textContent = "Practice Wandwork";
+    practiceBtn.style.fontSize = "1.5rem";
+    practiceBtn.style.padding = "1rem 2rem";
+    practiceBtn.onclick = function () {
+      dispatch({
+        type: "PRACTICE_WANDWORK"
+      }); // Placeholder
+    };
+    output.appendChild(restBtn);
+    output.appendChild(practiceBtn);
+  }
+
+  // === Combat End Phase ===
+  if (state.currentPhase === PHASES.COMBAT_END) {
+    var _state$offerings2;
+    var combatEndSection = document.createElement("div");
+    combatEndSection.innerHTML = "<h3>Combat Concluded</h3>";
+    var hasUnclaimedLoot = ((_state$offerings2 = state.offerings) === null || _state$offerings2 === void 0 ? void 0 : _state$offerings2.combatRewards) && state.offerings.combatRewards.length > 0;
+    var _btn = document.createElement("button");
+    _btn.textContent = hasUnclaimedLoot ? "Skip Loot" : "Continue";
+    _btn.onclick = function () {
+      dispatch({
+        type: ACTIONS.CLOSE_COMBAT_REWARDS
+      });
+    };
+    combatEndSection.appendChild(_btn);
+    output.appendChild(combatEndSection);
+  }
+  if (state.currentPhase === PHASES.COMBAT_END && state.offerings.combatRewards && state.offerings.combatRewards.length > 0) {
+    console.log("🔎 Rendering combatRewards:", state.offerings.combatRewards);
+    var rewardSection = document.createElement("div");
+    rewardSection.innerHTML = "<h3>Combat Rewards</h3>";
+    state.offerings.combatRewards.forEach(function (reward, index) {
+      var btn = document.createElement("button");
+      var label = "";
+      switch (reward.type) {
+        case "gold":
+          label = "Gold: ".concat(reward.value);
+          break;
+        case "card":
+          label = "Card: ".concat(reward.value.name);
+          break;
+        case "relic":
+          label = "Relic: ".concat(reward.value.name);
+          break;
+        case "potion":
+          label = "Potion: ".concat(reward.value.name);
+          break;
+        case "gem":
+          label = "Gem: ".concat(reward.value.name);
+          break;
+        default:
+          label = "Unknown Reward";
+      }
+      btn.textContent = label;
+      var isGem = reward.type === "gem";
+      var shouldDisable = isGem && allCardsSocketed;
+      if (shouldDisable) {
+        btn.disabled = true;
+        btn.style.opacity = 0.5;
+        btn.style.cursor = "not-allowed";
+      }
+      if (!shouldDisable) {
+        btn.onclick = function () {
+          if (reward.type === "gold") {
+            dispatch({
+              type: ACTIONS.CLAIM_GOLD_REWARD,
+              payload: {
+                index: index,
+                amount: reward.value
+              }
+            });
+          } else if (reward.type === "card") {
+            dispatch({
+              type: ACTIONS.PICK_CARD,
+              payload: index
+            });
+          } else if (reward.type === "relic") {
+            dispatch({
+              type: ACTIONS.PICK_RELIC,
+              payload: index
+            });
+          } else if (reward.type === "potion") {
+            dispatch({
+              type: ACTIONS.PICK_POTION,
+              payload: index
+            });
+          } else if (reward.type === "gem") {
+            dispatch({
+              type: ACTIONS.OPEN_MOD_SCREEN,
+              payload: {
+                mod: {
+                  gem: reward.value
+                },
+                origin: PHASES.COMBAT_END
+              }
+            });
+          }
+        };
+      }
+      rewardSection.appendChild(btn);
+    });
+    output.appendChild(rewardSection);
+  }
+  // === GAME OVER screen ====
+  if (state.currentPhase === PHASES.GAME_OVER) {
+    var gameOverSection = document.createElement("div");
+    gameOverSection.classList.add("game-over");
+    var banner = document.createElement("h1");
+    banner.textContent = state.gameOverResult === "victory" ? "🏆 Victory!" : "💀 Defeat!";
+    gameOverSection.appendChild(banner);
+    var summary = document.createElement("div");
+    summary.innerHTML = "\n      <p>Game ended at level: ".concat(state.level, "</p>\n      <h3>Decklist:</h3>\n      <ul>\n        ").concat(state.campaign.deck.map(function (card) {
+      return "<li>".concat(card.name, "</li>\n");
+    }).join(""), "\n      </ul>\n      <h3>Relics:</h3>\n      <ul>\n        ").concat(state.relicBelt.map(function (relic) {
+      return "<li>".concat(relic.name, "</li>");
+    }).join(""), "\n      </ul>\n    ");
+    gameOverSection.appendChild(summary);
+    var newGameBtn = document.createElement("button");
+    newGameBtn.textContent = "Return to Main Menu";
+    newGameBtn.onclick = function () {
+      dispatch({
+        type: ACTIONS.NEW_GAME
+      });
+    };
+    gameOverSection.appendChild(newGameBtn);
+    output.appendChild(gameOverSection);
+  }
+
+  // === Deck Inspect / Return Button ===
+  //deck inspect button
+  if ((state.currentScreen === SCREENS.MAIN || state.currentScreen === SCREENS.DECK) && state.campaign.deck.length > 0) {
+    var deckBtn = document.createElement("button");
+    deckBtn.textContent = state.currentScreen === SCREENS.MAIN ? "Inspect Deck (".concat(state.campaign.deck.length, ")") : "Return";
+    deckBtn.onclick = function () {
+      var nextScreen = state.currentScreen === SCREENS.MAIN ? SCREENS.DECK : SCREENS.MAIN;
+      dispatch({
+        type: ACTIONS.SCREEN_CHANGE,
+        payload: nextScreen
+      });
+    };
+    output.appendChild(deckBtn);
+  }
+  // deck inspect screen
+  if (state.currentScreen === SCREENS.DECK) {
+    var deckView = document.createElement("div");
+    deckView.innerHTML = "<h3>Campaign Deck</h3>";
+    var ul = document.createElement("ul");
+    state.campaign.deck.forEach(function (card) {
+      var li = document.createElement("li");
+      li.textContent = card.name;
+      ul.appendChild(li);
+    });
+    deckView.appendChild(ul);
+    output.appendChild(deckView);
+  }
+
+  // === Always-Visible Potion Belt ===
+  if (state.potionBelt && state.potionBelt.length > 0) {
+    var beltSection = document.createElement("div");
+    beltSection.innerHTML = "<h3>Your Potions</h3>";
+    var isCombatPhase = state.currentPhase === PHASES.COMBAT;
+    var isGameOver = state.currentPhase === PHASES.GAME_OVER;
+    state.potionBelt.forEach(function (potion, index) {
+      var btn = document.createElement("button");
+      btn.textContent = potion.name;
+      var isDrinkableNow = !isGameOver && (potion.drinkableOutOfCombat !== false || isCombatPhase);
+      if (!isDrinkableNow) {
+        btn.disabled = true;
+        btn.style.opacity = 0.5;
+        btn.style.cursor = "not-allowed";
+      }
+      btn.onclick = function () {
+        if (isDrinkableNow) {
+          dispatch({
+            type: ACTIONS.DRINK_POTION,
+            payload: index
+          });
+        }
+      };
+      beltSection.appendChild(btn);
+    });
+    output.appendChild(beltSection);
+  }
+  setupHotkeys(state, dispatch);
+}
+
+//#endregion
 
 // ============================================= expanding the game =============================================================
 // a mythic gem that makes a spell cost 1 less ink, be an instant, and exile on cast.
@@ -5460,7 +5470,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "50876" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "52587" + '/');
   ws.onmessage = function (event) {
     checkedAssets = {};
     assetsToAccept = [];
